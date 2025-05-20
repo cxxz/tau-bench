@@ -7,6 +7,7 @@ from litellm import completion
 
 from typing import Optional, List, Dict, Any, Union
 
+DISABLE_USER_MODEL_THINK = os.getenv("DISABLE_USER_MODEL_THINK") == "true"
 
 class BaseUserSimulationEnv(abc.ABC):
     metadata = {}
@@ -42,7 +43,7 @@ class LLMUserSimulationEnv(BaseUserSimulationEnv):
         self.model = model
         self.provider = provider
         self.total_cost = 0.0
-        self.disable_thinking = True if os.getenv("DISABLE_LLM_USER_THINK") == "true" else False
+        self.disable_thinking = True if os.getenv("DISABLE_USER_MODEL_THINK") == "true" else False
         self.reset()
 
     def generate_next_message(self, messages: List[Dict[str, Any]]) -> str:
@@ -236,11 +237,20 @@ Your answer will be parsed, so do not include any other text than the classifica
 -----
 
 Classification:"""
-    res = completion(
-        model=model,
-        custom_llm_provider=provider,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    # print(f"CONG TEST verify DISABLE_USER_MODEL_THINK: {DISABLE_USER_MODEL_THINK}")
+    if DISABLE_USER_MODEL_THINK and provider == "gemini":
+        res = completion(
+            model=model,
+            custom_llm_provider=provider,
+            messages=[{"role": "user", "content": prompt}],
+            thinking={"type": "enabled", "budget_tokens": 0},
+        )
+    else:
+        res = completion(
+            model=model,
+            custom_llm_provider=provider,
+            messages=[{"role": "user", "content": prompt}],
+        )
     return "true" in res.choices[0].message.content.lower()
 
 
@@ -270,11 +280,20 @@ Reflection:
 
 Response:
 <the response (this will be parsed and sent to the agent)>"""
-    res = completion(
-        model=model,
-        custom_llm_provider=provider,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    # print(f"CONG TEST reflection DISABLE_USER_MODEL_THINK: {DISABLE_USER_MODEL_THINK}")
+    if DISABLE_USER_MODEL_THINK and provider == "gemini":
+        res = completion(
+            model=model,
+            custom_llm_provider=provider,
+            messages=[{"role": "user", "content": prompt}],
+            thinking={"type": "enabled", "budget_tokens": 0},
+        )
+    else:
+        res = completion(
+            model=model,
+            custom_llm_provider=provider,
+            messages=[{"role": "user", "content": prompt}],
+        )
     _, response = res.choices[0].message.content.split("Response:")
     return response.strip()
 
@@ -284,6 +303,7 @@ class ReflectionUserSimulationEnv(LLMUserSimulationEnv):
         self.model = model
         self.provider = provider
         self.max_attempts = max_attempts
+        self.disable_thinking = True if os.getenv("DISABLE_USER_MODEL_THINK") == "true" else False
         self.reset()
 
     def generate_next_message(self, messages: List[Dict[str, Any]]) -> str:
