@@ -24,7 +24,7 @@ class ToolCallingAgent(Agent):
         self.model = model
         self.provider = provider
         self.temperature = temperature
-        self.disable_thinking = False if os.getenv("DISABLE_AGENT_MODEL_THINK") == "true" else True
+        self.disable_thinking = True if os.getenv("DISABLE_AGENT_MODEL_THINK") == "true" else False
 
     def solve(
         self, env: Env, task_index: Optional[int] = None, max_num_steps: int = 30
