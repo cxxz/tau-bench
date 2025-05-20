@@ -2,6 +2,7 @@
 
 import abc
 import enum
+import os
 from litellm import completion
 
 from typing import Optional, List, Dict, Any, Union
@@ -41,12 +42,23 @@ class LLMUserSimulationEnv(BaseUserSimulationEnv):
         self.model = model
         self.provider = provider
         self.total_cost = 0.0
+        self.disable_thinking = True if os.getenv("DISABLE_LLM_USER_THINK") == "true" else False
         self.reset()
 
     def generate_next_message(self, messages: List[Dict[str, Any]]) -> str:
-        res = completion(
-            model=self.model, custom_llm_provider=self.provider, messages=messages
-        )
+        if self.disable_thinking and self.provider == "gemini":
+            res = completion(
+                model=self.model,
+                custom_llm_provider=self.provider,
+                messages=messages,
+                thinking={"type": "enabled", "budget_tokens": 0},
+            )
+        else:
+            res = completion(
+                model=self.model,
+                custom_llm_provider=self.provider,
+                messages=messages
+            )
         message = res.choices[0].message
         self.messages.append(message.model_dump())
         self.total_cost = res._hidden_params["response_cost"]
