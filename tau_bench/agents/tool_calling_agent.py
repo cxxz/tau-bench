@@ -1,6 +1,7 @@
 # Copyright Sierra
 
 import json
+import os
 from litellm import completion
 from typing import List, Optional, Dict, Any
 
@@ -23,6 +24,7 @@ class ToolCallingAgent(Agent):
         self.model = model
         self.provider = provider
         self.temperature = temperature
+        self.disable_thinking = False if os.getenv("DISABLE_AGENT_MODEL_THINK") == "true" else True
 
     def solve(
         self, env: Env, task_index: Optional[int] = None, max_num_steps: int = 30
@@ -37,15 +39,27 @@ class ToolCallingAgent(Agent):
             {"role": "user", "content": obs},
         ]
         for _ in range(max_num_steps):
-            res = completion(
-                messages=messages,
-                model=self.model,
-                custom_llm_provider=self.provider,
-                tools=self.tools_info,
-                temperature=self.temperature,
-            )
+            if self.disable_thinking:
+                res = completion(
+                    messages=messages,
+                    model=self.model,
+                    custom_llm_provider=self.provider,
+                    tools=self.tools_info,
+                    temperature=self.temperature,
+                    extra_body={
+                        "chat_template_kwargs": {"enable_thinking": False},
+                    },
+                )
+            else:
+                res = completion(
+                    messages=messages,
+                    model=self.model,
+                    custom_llm_provider=self.provider,
+                    tools=self.tools_info,
+                    temperature=self.temperature,
+                )
             next_message = res.choices[0].message.model_dump()
-            total_cost += res._hidden_params["response_cost"]
+            # total_cost += res._hidden_params["response_cost"]
             action = message_to_action(next_message)
             env_response = env.step(action)
             reward = env_response.reward
