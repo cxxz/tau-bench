@@ -275,3 +275,39 @@ MAX_CONCURRENCY=8
   k=1: 0.5652173913043478
 
 📄 Results saved to results/tool-calling-gpt-4.1-mini-0.0_range_0--1_user-gemini-2.5-flash-preview-04-17-reflection_0520070107.json
+
+
+## Trail #16
+AGENT_MODEL="Qwen3-235B-A22B-no-think"
+AGENT_PROVIDER="hosted_vllm"
+USER_MODEL="gemini-2.5-flash-preview-04-17-no-think"
+USER_PROVIDER="gemini"
+
+USER_STRATEGY="llm"
+ENV="retail"
+MAX_CONCURRENCY=8
+
+-----
+🏆 Average reward: 0.40869565217391307
+📈 Pass^k
+  k=1: 0.40869565217391307
+
+📄 Results saved to results/tool-calling-Qwen3-235B-A22B-0.0_range_0--1_user-gemini-2.5-flash-preview-04-17-llm_0520153910.json
+
+## Trial #17
+AGENT_MODEL="Qwen3-235B-A22B-no-think"
+AGENT_PROVIDER="hosted_vllm"
+USER_MODEL="gemini-2.5-flash-preview-04-17"
+USER_PROVIDER="gemini"
+
+USER_STRATEGY="llm"
+ENV="retail"
+MAX_CONCURRENCY=8
+
+-----
+🏆 Average reward: 0.5043478260869565
+📈 Pass^k
+  k=1: 0.5043478260869565
+
+📄 Results saved to results/tool-calling-Qwen3-235B-A22B-0.0_range_0--1_user-gemini-2.5-flash-preview-04-17-llm_0520182236.json
+

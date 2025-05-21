@@ -14,8 +14,9 @@ USER_PROVIDER="gemini"
 USER_STRATEGY="llm"
 ENV="retail"
 MAX_CONCURRENCY=8
-x
-export DISABLE_USER_MODEL_THINK="true"
+
+# export AGENT_MODEL_REASONING_EFFORT="high"
+# export DISABLE_USER_MODEL_THINK="true"
 # export DISABLE_AGENT_MODEL_THINK="true"
 export HOSTED_VLLM_API_BASE="http://xxx.yyy.zzz.net:8715/v1"
 

@@ -25,6 +25,7 @@ class ToolCallingAgent(Agent):
         self.provider = provider
         self.temperature = temperature
         self.disable_thinking = True if os.getenv("DISABLE_AGENT_MODEL_THINK") == "true" else False
+        self.reasoning_effort = os.getenv("AGENT_MODEL_REASONING_EFFORT", None)
 
     def solve(
         self, env: Env, task_index: Optional[int] = None, max_num_steps: int = 30
@@ -50,14 +51,13 @@ class ToolCallingAgent(Agent):
                         "chat_template_kwargs": {"enable_thinking": False},
                     },
                 )
-            elif "o4-mini" in self.model:
+            elif self.reasoning_effort is not None:
                 res = completion(
                     messages=messages,
                     model=self.model,
                     custom_llm_provider=self.provider,
                     tools=self.tools_info,
-                    temperature=self.temperature,
-                    reasoning_effort= "low", # "medium", "high"
+                    reasoning_effort=self.reasoning_effort,
                 )
             else:
                 res = completion(
@@ -71,11 +71,11 @@ class ToolCallingAgent(Agent):
             next_message = res.choices[0].message.model_dump()
             try:
                 if res.usage.completion_tokens_details.reasoning_tokens:
-                    thinking_token_count = res.usage.completion_tokens_details.reasoning_tokens
-                    next_message['thinking_token_count'] = thinking_token_count
+                    reasoning_token_count = res.usage.completion_tokens_details.reasoning_tokens
+                    next_message['reasoning_token_count'] = reasoning_token_count
             except:
-                thinking_token_count = count_thinking_tokens(res.choices[0].message.content, self.model)
-                next_message['thinking_token_count'] = thinking_token_count
+                reasoning_token_count = count_thinking_tokens(res.choices[0].message.content, self.model)
+                next_message['reasoning_token_count'] = reasoning_token_count
             # total_cost += res._hidden_params["response_cost"]
             action = message_to_action(next_message)
             env_response = env.step(action)
