@@ -84,6 +84,8 @@ class ToolCallingAgent(Agent):
                     
             if "response_cost" in res._hidden_params and res._hidden_params["response_cost"] is not None:
                 total_cost += res._hidden_params["response_cost"]
+                next_message["response_cost"] = res._hidden_params["response_cost"]
+                
             action = message_to_action(next_message)
             env_response = env.step(action)
             reward = env_response.reward
