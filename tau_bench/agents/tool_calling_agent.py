@@ -50,6 +50,15 @@ class ToolCallingAgent(Agent):
                         "chat_template_kwargs": {"enable_thinking": False},
                     },
                 )
+            elif "o4-mini" in self.model:
+                res = completion(
+                    messages=messages,
+                    model=self.model,
+                    custom_llm_provider=self.provider,
+                    tools=self.tools_info,
+                    temperature=self.temperature,
+                    reasoning_effort= "low", # "medium", "high"
+                )
             else:
                 res = completion(
                     messages=messages,
@@ -58,7 +67,15 @@ class ToolCallingAgent(Agent):
                     tools=self.tools_info,
                     temperature=self.temperature,
                 )
+
             next_message = res.choices[0].message.model_dump()
+            try:
+                if res.usage.completion_tokens_details.reasoning_tokens:
+                    thinking_token_count = res.usage.completion_tokens_details.reasoning_tokens
+                    next_message['thinking_token_count'] = thinking_token_count
+            except:
+                thinking_token_count = count_thinking_tokens(res.choices[0].message.content, self.model)
+                next_message['thinking_token_count'] = thinking_token_count
             # total_cost += res._hidden_params["response_cost"]
             action = message_to_action(next_message)
             env_response = env.step(action)
@@ -105,3 +122,31 @@ def message_to_action(
         )
     else:
         return Action(name=RESPOND_ACTION_NAME, kwargs={"content": message["content"]})
+
+
+def count_thinking_tokens(response_text: str, model_name: str) -> int:
+    """
+    Parse the response content using <think>...</think> and return the number of tokens
+    in the thinking content. If no thinking content is parsed, return 0.
+    """
+    # from transformers import AutoTokenizer
+
+    # try:
+    #     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # except Exception as e:
+    #     print(f"Error loading tokenizer for model {model_name}: {e}")
+    #     return 0
+
+    start_token = "<think>"
+    end_token = "</think>"
+
+    if start_token in response_text and end_token in response_text:
+        start_idx = response_text.find(start_token) + len(start_token)
+        end_idx = response_text.find(end_token, start_idx)
+        if end_idx > start_idx:
+            thinking_content = response_text[start_idx:end_idx]
+            # Use hf transformers for accurate tokenization
+            # return len(tokenizer.encode(thinking_content))
+            # Estimate the number of tokens based on word count
+            return int(len(thinking_content.strip().split()) / 0.75)
+    return 0
