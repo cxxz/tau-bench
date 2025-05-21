@@ -7,6 +7,9 @@ from litellm import completion
 
 from typing import Optional, List, Dict, Any, Union
 
+from dotenv import load_dotenv
+load_dotenv()
+
 DISABLE_USER_MODEL_THINK = os.getenv("DISABLE_USER_MODEL_THINK") == "true"
 
 class BaseUserSimulationEnv(abc.ABC):

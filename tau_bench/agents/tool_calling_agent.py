@@ -9,6 +9,8 @@ from tau_bench.agents.base import Agent
 from tau_bench.envs.base import Env
 from tau_bench.types import SolveResult, Action, RESPOND_ACTION_NAME
 
+from dotenv import load_dotenv
+load_dotenv()
 
 class ToolCallingAgent(Agent):
     def __init__(
@@ -26,6 +28,9 @@ class ToolCallingAgent(Agent):
         self.temperature = temperature
         self.disable_thinking = True if os.getenv("DISABLE_AGENT_MODEL_THINK") == "true" else False
         self.reasoning_effort = os.getenv("AGENT_MODEL_REASONING_EFFORT", None)
+        if self.provider == "vertex_ai":
+            self.vai_project = os.getenv("VAI_PROJECT_ID")
+            assert self.vai_project is not None, "VAI_PROJECT_ID environment variable must be set"
 
     def solve(
         self, env: Env, task_index: Optional[int] = None, max_num_steps: int = 30
@@ -40,7 +45,30 @@ class ToolCallingAgent(Agent):
             {"role": "user", "content": obs},
         ]
         for _ in range(max_num_steps):
-            if self.disable_thinking:
+            if self.provider == "vertex_ai":
+                # print(f"CONG TEST vertex_ai: {self.model}")
+                if self.disable_thinking:
+                    res = completion(
+                        messages=messages,
+                        model=self.model,
+                        custom_llm_provider=self.provider,
+                        tools=self.tools_info,
+                        temperature=self.temperature,
+                        thinking={"type": "disabled", "budget_tokens": 0},
+                        vertex_project=self.vai_project,
+                        vertex_location="us-central1"
+                    )
+                else:
+                    res = completion(
+                        messages=messages,
+                        model=self.model,
+                        custom_llm_provider=self.provider,
+                        tools=self.tools_info,
+                        temperature=self.temperature,
+                        vertex_project=self.vai_project,
+                        vertex_location="us-central1"
+                    )
+            elif self.disable_thinking:
                 res = completion(
                     messages=messages,
                     model=self.model,

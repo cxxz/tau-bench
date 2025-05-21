@@ -49,7 +49,11 @@ def run(config: RunConfig) -> List[EnvRunResult]:
     )
     results: List[EnvRunResult] = []
     lock = multiprocessing.Lock()
-    agent_think_postfix = "-no-thinking" if os.getenv("DISABLE_AGENT_MODEL_THINK") == "true" else ""
+    agent_think_postfix = "" 
+    if os.getenv("DISABLE_AGENT_MODEL_THINK") == "true":
+        agent_think_postfix = "-no-thinking"
+    elif os.getenv("AGENT_MODEL_REASONING_EFFORT") is not None:
+        agent_think_postfix = "-" + os.getenv("AGENT_MODEL_REASONING_EFFORT")
     user_think_postfix = "-no-thinking" if os.getenv("DISABLE_USER_MODEL_THINK") == "true" else ""
     if config.task_ids and len(config.task_ids) > 0:
         task_ids_str = [str(id) for id in config.task_ids]
