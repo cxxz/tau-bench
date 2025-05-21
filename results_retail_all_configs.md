@@ -245,6 +245,22 @@ MAX_CONCURRENCY=8
 ## Trial #14
 AGENT_MODEL="gpt-4.1-mini"
 AGENT_PROVIDER="azure"
+USER_MODEL="gemini-2.5-flash-preview-05-20"
+USER_PROVIDER="gemini"
+
+USER_STRATEGY="llm"
+ENV="retail"
+MAX_CONCURRENCY=8
+
+-----
+🏆 Average reward: 0.41739130434782606
+📈 Pass^k
+  k=1: 0.41739130434782606
+📄 Results saved to results/tool-calling-gpt-4.1-mini-0.0_range_0--1_user-gemini-2.5-flash-preview-05-20-llm_0521004313.json
+
+## Trial #15
+AGENT_MODEL="gpt-4.1-mini"
+AGENT_PROVIDER="azure"
 USER_MODEL="gemini-2.5-flash-preview-04-17-no-think"
 USER_PROVIDER="gemini"
 
@@ -259,7 +275,7 @@ MAX_CONCURRENCY=8
 
 📄 Results saved to results/tool-calling-gpt-4.1-mini-0.0_range_0--1_user-gemini-2.5-flash-preview-04-17-llm_0520205319.json
 
-## Trial #15
+## Trial #16
 AGENT_MODEL="gpt-4.1-mini"
 AGENT_PROVIDER="azure"
 USER_MODEL="gemini-2.5-flash-preview-04-17-no-think"
@@ -277,23 +293,6 @@ MAX_CONCURRENCY=8
 📄 Results saved to results/tool-calling-gpt-4.1-mini-0.0_range_0--1_user-gemini-2.5-flash-preview-04-17-reflection_0520070107.json
 
 
-## Trail #16
-AGENT_MODEL="Qwen3-235B-A22B-no-think"
-AGENT_PROVIDER="hosted_vllm"
-USER_MODEL="gemini-2.5-flash-preview-04-17-no-think"
-USER_PROVIDER="gemini"
-
-USER_STRATEGY="llm"
-ENV="retail"
-MAX_CONCURRENCY=8
-
------
-🏆 Average reward: 0.40869565217391307
-📈 Pass^k
-  k=1: 0.40869565217391307
-
-📄 Results saved to results/tool-calling-Qwen3-235B-A22B-0.0_range_0--1_user-gemini-2.5-flash-preview-04-17-llm_0520153910.json
-
 ## Trial #17
 AGENT_MODEL="Qwen3-235B-A22B-no-think"
 AGENT_PROVIDER="hosted_vllm"
@@ -310,4 +309,47 @@ MAX_CONCURRENCY=8
   k=1: 0.5043478260869565
 
 📄 Results saved to results/tool-calling-Qwen3-235B-A22B-0.0_range_0--1_user-gemini-2.5-flash-preview-04-17-llm_0520182236.json
+
+
+## Trial #18
+AGENT_MODEL="o4-mini-high"
+AGENT_PROVIDER="azure"
+USER_MODEL="gemini-2.5-flash-preview-04-17"
+USER_PROVIDER="gemini"
+
+USER_STRATEGY="llm"
+ENV="retail"
+MAX_CONCURRENCY=8
+
+-----
+🏆 Average reward: 0.6782608695652174
+📈 Pass^k
+  k=1: 0.6782608695652174
+📄 Results saved to results/tool-calling-o4-mini-0.0_range_0--1_user-gemini-2.5-flash-preview-04-17-llm_0521070848.json
+-----
+
+Token consumption by agent model:
+key_YJSKjUwTJ4L6u3MD
+input tokens: 7,545,399
+key_YJSKjUwTJ4L6u3MD
+output tokens: 1,095,530
+
+
+
+## Trail #19
+AGENT_MODEL="Qwen3-235B-A22B-no-think"
+AGENT_PROVIDER="hosted_vllm"
+USER_MODEL="gemini-2.5-flash-preview-04-17-no-think"
+USER_PROVIDER="gemini"
+
+USER_STRATEGY="llm"
+ENV="retail"
+MAX_CONCURRENCY=8
+
+-----
+🏆 Average reward: 0.40869565217391307
+📈 Pass^k
+  k=1: 0.40869565217391307
+
+📄 Results saved to results/tool-calling-Qwen3-235B-A22B-0.0_range_0--1_user-gemini-2.5-flash-preview-04-17-llm_0520153910.json
 
