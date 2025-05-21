@@ -74,9 +74,16 @@ class ToolCallingAgent(Agent):
                     reasoning_token_count = res.usage.completion_tokens_details.reasoning_tokens
                     next_message['reasoning_token_count'] = reasoning_token_count
             except:
-                reasoning_token_count = count_thinking_tokens(res.choices[0].message.content, self.model)
-                next_message['reasoning_token_count'] = reasoning_token_count
-            # total_cost += res._hidden_params["response_cost"]
+                if 'reasoning_content' in next_message and next_message['reasoning_content'] is not None:
+                    reasoning_token_count = count_reasoning_tokens(next_message['reasoning_content'], self.model)
+                    next_message['reasoning_token_count'] = reasoning_token_count
+                else:
+                    reasoning_content = parse_reasoning_content(next_message['content'])
+                    reasoning_token_count = count_reasoning_tokens(reasoning_content, self.model)
+                    next_message['reasoning_token_count'] = reasoning_token_count
+                    
+            if "response_cost" in res._hidden_params and res._hidden_params["response_cost"] is not None:
+                total_cost += res._hidden_params["response_cost"]
             action = message_to_action(next_message)
             env_response = env.step(action)
             reward = env_response.reward
@@ -124,10 +131,13 @@ def message_to_action(
         return Action(name=RESPOND_ACTION_NAME, kwargs={"content": message["content"]})
 
 
-def count_thinking_tokens(response_text: str, model_name: str) -> int:
+def parse_reasoning_content(response_text: str) -> str:
     """
-    Parse the response content using <think>...</think> and return the number of tokens
-    in the thinking content. If no thinking content is parsed, return 0.
+    Parse the response content using <think>...</think> and return the reasoning content.
+    Args:
+        response_text (str): The response text from the model.
+    Returns:
+        reasoning_content (str): The parsed reasoning content.
     """
     # from transformers import AutoTokenizer
 
@@ -144,9 +154,36 @@ def count_thinking_tokens(response_text: str, model_name: str) -> int:
         start_idx = response_text.find(start_token) + len(start_token)
         end_idx = response_text.find(end_token, start_idx)
         if end_idx > start_idx:
-            thinking_content = response_text[start_idx:end_idx]
+            reasoning_content = response_text[start_idx:end_idx]
             # Use hf transformers for accurate tokenization
             # return len(tokenizer.encode(thinking_content))
             # Estimate the number of tokens based on word count
-            return int(len(thinking_content.strip().split()) / 0.75)
-    return 0
+            return reasoning_content
+    return ""
+
+def count_reasoning_tokens(
+    reasoning_content: str,
+    model_name: str,
+) -> int:
+    """
+    Count the number of tokens in the reasoning content of the response text.
+    Args:
+        reasoning_content (str): The reasoning content from the model.
+        model_name (str): The name of the model used for tokenization.
+    Returns:
+        int: The number of tokens in the reasoning content.
+    """
+    # from transformers import AutoTokenizer
+
+    # try:
+    #     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # except Exception as e:
+    #     print(f"Error loading tokenizer for model {model_name}: {e}")
+    #     return 0
+
+    # Use hf transformers for accurate tokenization
+    # return len(tokenizer.encode(thinking_content))
+
+
+    # Estimate the number of tokens based on word count
+    return int(len(reasoning_content.strip().split()) / 0.75)
