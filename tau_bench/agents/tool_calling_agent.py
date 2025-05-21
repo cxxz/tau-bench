@@ -74,13 +74,17 @@ class ToolCallingAgent(Agent):
                 next_message['prompt_tokens'] = usage.prompt_tokens
             if hasattr(usage, 'completion_tokens') and usage.completion_tokens is not None:
                 next_message['completion_tokens'] = usage.completion_tokens            
-            if res.usage.completion_tokens_details is not None and hasattr(res.usage.completion_tokens_details, "reasoning_tokens"):
+            if hasattr(usage, 'completion_tokens_details') and hasattr(res.usage.completion_tokens_details, "reasoning_tokens"):
+                # print(f"CONG TEST {res.usage.completion_tokens_details}")
                 reasoning_tokens = res.usage.completion_tokens_details.reasoning_tokens
                 next_message['reasoning_tokens'] = reasoning_tokens
-            elif hasattr(next_message, 'reasoning_content') and next_message['reasoning_content'] is not None:
+            elif 'reasoning_content' in next_message and next_message['reasoning_content'] is not None:
+                # print(f"CONG TEST reasoning_content: {next_message['reasoning_content'][:16]}")
                 reasoning_tokens = count_reasoning_tokens(next_message['reasoning_content'], self.model)
+                # print(f"CONG TEST reasoning_tokens: {reasoning_tokens}")
                 next_message['reasoning_tokens'] = reasoning_tokens
             else:
+                # print(f"CONG TEST {next_message}")
                 msg_content = next_message['content']
                 # print(f"CONG TEST msg_content: {msg_content}")
                 if msg_content is not None:
