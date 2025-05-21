@@ -69,18 +69,24 @@ class ToolCallingAgent(Agent):
                 )
 
             next_message = res.choices[0].message.model_dump()
-            try:
-                if res.usage.completion_tokens_details.reasoning_tokens:
-                    reasoning_token_count = res.usage.completion_tokens_details.reasoning_tokens
-                    next_message['reasoning_token_count'] = reasoning_token_count
-            except:
-                if 'reasoning_content' in next_message and next_message['reasoning_content'] is not None:
-                    reasoning_token_count = count_reasoning_tokens(next_message['reasoning_content'], self.model)
-                    next_message['reasoning_token_count'] = reasoning_token_count
-                else:
+            usage = res.usage
+            if hasattr(usage, 'prompt_tokens') and usage.prompt_tokens is not None:
+                next_message['prompt_tokens'] = usage.prompt_tokens
+            if hasattr(usage, 'completion_tokens') and usage.completion_tokens is not None:
+                next_message['completion_tokens'] = usage.completion_tokens            
+            if res.usage.completion_tokens_details is not None and hasattr(res.usage.completion_tokens_details, "reasoning_tokens"):
+                reasoning_tokens = res.usage.completion_tokens_details.reasoning_tokens
+                next_message['reasoning_tokens'] = reasoning_tokens
+            elif hasattr(next_message, 'reasoning_content') and next_message['reasoning_content'] is not None:
+                reasoning_tokens = count_reasoning_tokens(next_message['reasoning_content'], self.model)
+                next_message['reasoning_tokens'] = reasoning_tokens
+            else:
+                msg_content = next_message['content']
+                # print(f"CONG TEST msg_content: {msg_content}")
+                if msg_content is not None:
                     reasoning_content = parse_reasoning_content(next_message['content'])
-                    reasoning_token_count = count_reasoning_tokens(reasoning_content, self.model)
-                    next_message['reasoning_token_count'] = reasoning_token_count
+                    reasoning_tokens = count_reasoning_tokens(reasoning_content, self.model)
+                    next_message['reasoning_tokens'] = reasoning_tokens
                     
             if "response_cost" in res._hidden_params and res._hidden_params["response_cost"] is not None:
                 total_cost += res._hidden_params["response_cost"]

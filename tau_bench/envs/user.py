@@ -47,7 +47,9 @@ class LLMUserSimulationEnv(BaseUserSimulationEnv):
         self.reset()
 
     def generate_next_message(self, messages: List[Dict[str, Any]]) -> str:
+        # print(f"CONG TEST: self.disable_thinking {self.disable_thinking}")
         if self.disable_thinking and self.provider == "gemini":
+            # print(f"CONG TEST disable thinking")
             res = completion(
                 model=self.model,
                 custom_llm_provider=self.provider,
