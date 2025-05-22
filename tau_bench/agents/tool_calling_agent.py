@@ -12,6 +12,8 @@ from tau_bench.types import SolveResult, Action, RESPOND_ACTION_NAME
 from dotenv import load_dotenv
 load_dotenv()
 
+MAX_RETRIES = 3
+
 class ToolCallingAgent(Agent):
     def __init__(
         self,
@@ -45,48 +47,47 @@ class ToolCallingAgent(Agent):
             {"role": "user", "content": obs},
         ]
         for _ in range(max_num_steps):
-            if self.provider == "vertex_ai":
-                # print(f"CONG TEST vertex_ai: {self.model}")
-                if self.disable_thinking:
+            if self.reasoning_effort is not None:
+                # print(f"CONG TEST reasoning_effort: {self.reasoning_effort}")
+                if self.reasoning_effort in ["low", "medium", "high"]:
                     res = completion(
                         messages=messages,
                         model=self.model,
                         custom_llm_provider=self.provider,
                         tools=self.tools_info,
-                        temperature=self.temperature,
-                        thinking={"type": "disabled", "budget_tokens": 0},
-                        vertex_project=self.vai_project,
-                        vertex_location="us-central1"
+                        reasoning_effort=self.reasoning_effort,
+                        max_retries=MAX_RETRIES,
                     )
-                else:
+                elif self.reasoning_effort.startswith("thinking-budget-"):
+                    budget_tokens = int(self.reasoning_effort.split("thinking-budget-")[1])
                     res = completion(
                         messages=messages,
                         model=self.model,
                         custom_llm_provider=self.provider,
                         tools=self.tools_info,
-                        temperature=self.temperature,
-                        vertex_project=self.vai_project,
-                        vertex_location="us-central1"
-                    )
+                        thinking={"type": "enabled", "budget_tokens": budget_tokens},
+                        timeout=1200,
+                        max_retries=MAX_RETRIES,
+                    )        
             elif self.disable_thinking:
-                res = completion(
-                    messages=messages,
-                    model=self.model,
-                    custom_llm_provider=self.provider,
-                    tools=self.tools_info,
-                    temperature=self.temperature,
-                    extra_body={
-                        "chat_template_kwargs": {"enable_thinking": False},
-                    },
-                )
-            elif self.reasoning_effort is not None:
-                res = completion(
-                    messages=messages,
-                    model=self.model,
-                    custom_llm_provider=self.provider,
-                    tools=self.tools_info,
-                    reasoning_effort=self.reasoning_effort,
-                )
+                if "qwen3" in self.model.lower():
+                    res = completion(
+                        messages=messages,
+                        model=self.model,
+                        custom_llm_provider=self.provider,
+                        tools=self.tools_info,
+                        temperature=self.temperature,
+                        extra_body={
+                            "chat_template_kwargs": {"enable_thinking": False},
+                        },
+                    )
+                elif "gemini-" in self.model:
+                    res = completion(
+                        model=self.model,
+                        custom_llm_provider=self.provider,
+                        messages=messages,
+                        thinking={"type": "disabled", "budget_tokens": 0},
+                    )
             else:
                 res = completion(
                     messages=messages,
