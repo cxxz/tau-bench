@@ -159,3 +159,100 @@ Please submit issues or pull requests if you find problems with the benchmark.
       url={https://arxiv.org/abs/2406.12045}, 
 }
 ```
+
+# 🤖 Retail Agent Results Visualizer
+
+A Flask-based web application for visualizing and analyzing retail agent conversation results from the tau-bench framework. This tool helps you examine multi-turn conversations, tool calls, and compare agent performance against ground truth expectations.
+
+## ✨ Features
+
+### Core Functionality
+- **📁 File Upload**: Upload JSON results files with format `agent-<model>_user-<model>-<xxx>.json`
+- **🔍 Task Selection**: Browse tasks via dropdown with success/failure indicators
+- **💬 Conversation View**: Clean chatbot-style interface showing multi-turn conversations
+- **⚙️ Tool Call Display**: Expandable tool calls with formatted arguments and results
+- **✅ Ground Truth Comparison**: Side-by-side view of expected vs actual behavior
+
+### Enhanced Analysis
+- **🎯 Smart Filtering**: Filter tasks by success/failure status with detailed task info
+- **📊 Action Analysis**: Intelligent comparison of expected vs actual action sequences
+- **⚠️ Error Detection**: Quick jump to failed tasks for error analysis
+- **📈 Statistics**: Real-time success rates and task completion metrics
+- **💾 Export**: Export individual task conversations for external analysis
+
+### UI/UX Features
+- **📱 Responsive Design**: Works on desktop and mobile devices
+- **🎨 Modern Interface**: Clean Bootstrap-based design with intuitive navigation
+- **⚡ Fast Navigation**: Previous/Next task buttons and quick filters
+- **🔄 Live Updates**: Real-time filtering and statistics updates
+
+## 🚀 Quick Start
+
+### Installation
+```bash
+# Clone or navigate to your tau-bench directory
+cd visualize-results
+
+# Install Flask if not already installed
+pip install flask
+
+# Run the application
+python app.py
+```
+
+### Usage
+1. **Start the App**: Open http://localhost:5678 in your browser
+2. **Upload Results**: Select your results JSON file (e.g., `agent-o4-mini-high_user-gemini-2.5-flash-preview-04-17-llm_range-0-115_0521203831.json`)
+3. **Browse Tasks**: Use the dropdown to select specific tasks or apply filters
+4. **Analyze**: Toggle ground truth view to compare expected vs actual behavior
+5. **Export**: Use the export button to save detailed conversation logs
+
+## 📋 File Structure
+
+```
+├── app.py                 # Main Flask application
+├── templates/
+│   └── index.html        # Main web interface
+├── static/
+│   ├── style.css         # Custom styles
+│   └── script.js         # Frontend JavaScript
+└── uploads/              # Uploaded files directory
+```
+
+## 🔧 Technical Details
+
+### Supported Input Format
+The app expects JSON files containing task results with this structure:
+```json
+[
+  {
+    "task_id": 0,
+    "reward": 0.8,
+    "traj": [
+      {
+        "role": "user",
+        "content": "Hello, I need help..."
+      },
+      {
+        "role": "assistant", 
+        "tool_calls": [...]
+      }
+    ]
+  }
+]
+```
+
+### Ground Truth Integration
+Automatically loads ground truth data from `tau_bench/envs/retail/tasks_test.py`:
+- User instructions
+- Expected action sequences
+- Expected outputs
+- Task metadata
+
+### Action Comparison Algorithm
+The app provides intelligent action sequence comparison:
+- ✅ **Perfect Match**: Exact sequence and order match
+- ⚙️ **Partial Match**: Some actions match but may be missing/extra/reordered
+- ❌ **Missing Actions**: Expected actions not performed
+- ⚠️ **Extra Actions**: Unexpected actions performed
+- 🔄 **Wrong Order**: Correct actions but incorrect sequence
