@@ -9,6 +9,10 @@ from tau_bench.agents.base import Agent
 from tau_bench.envs.base import Env
 from tau_bench.types import SolveResult, Action, RESPOND_ACTION_NAME
 
+from dotenv import load_dotenv
+load_dotenv()
+
+MAX_RETRIES = 3
 
 class ToolCallingAgent(Agent):
     def __init__(
@@ -25,6 +29,10 @@ class ToolCallingAgent(Agent):
         self.provider = provider
         self.temperature = temperature
         self.disable_thinking = True if os.getenv("DISABLE_AGENT_MODEL_THINK") == "true" else False
+        self.reasoning_effort = os.getenv("AGENT_MODEL_REASONING_EFFORT", None)
+        if self.provider == "vertex_ai":
+            self.vai_project = os.getenv("VAI_PROJECT_ID")
+            assert self.vai_project is not None, "VAI_PROJECT_ID environment variable must be set"
 
     def solve(
         self, env: Env, task_index: Optional[int] = None, max_num_steps: int = 30
@@ -39,17 +47,47 @@ class ToolCallingAgent(Agent):
             {"role": "user", "content": obs},
         ]
         for _ in range(max_num_steps):
-            if self.disable_thinking:
-                res = completion(
-                    messages=messages,
-                    model=self.model,
-                    custom_llm_provider=self.provider,
-                    tools=self.tools_info,
-                    temperature=self.temperature,
-                    extra_body={
-                        "chat_template_kwargs": {"enable_thinking": False},
-                    },
-                )
+            if self.reasoning_effort is not None:
+                # print(f"CONG TEST reasoning_effort: {self.reasoning_effort}")
+                if self.reasoning_effort in ["low", "medium", "high"]:
+                    res = completion(
+                        messages=messages,
+                        model=self.model,
+                        custom_llm_provider=self.provider,
+                        tools=self.tools_info,
+                        reasoning_effort=self.reasoning_effort,
+                        max_retries=MAX_RETRIES,
+                    )
+                elif self.reasoning_effort.startswith("thinking-budget-"):
+                    budget_tokens = int(self.reasoning_effort.split("thinking-budget-")[1])
+                    res = completion(
+                        messages=messages,
+                        model=self.model,
+                        custom_llm_provider=self.provider,
+                        tools=self.tools_info,
+                        thinking={"type": "enabled", "budget_tokens": budget_tokens},
+                        timeout=1200,
+                        max_retries=MAX_RETRIES,
+                    )        
+            elif self.disable_thinking:
+                if "qwen3" in self.model.lower():
+                    res = completion(
+                        messages=messages,
+                        model=self.model,
+                        custom_llm_provider=self.provider,
+                        tools=self.tools_info,
+                        temperature=self.temperature,
+                        extra_body={
+                            "chat_template_kwargs": {"enable_thinking": False},
+                        },
+                    )
+                elif "gemini-" in self.model:
+                    res = completion(
+                        model=self.model,
+                        custom_llm_provider=self.provider,
+                        messages=messages,
+                        thinking={"type": "disabled", "budget_tokens": 0},
+                    )
             else:
                 res = completion(
                     messages=messages,
@@ -58,8 +96,35 @@ class ToolCallingAgent(Agent):
                     tools=self.tools_info,
                     temperature=self.temperature,
                 )
+
             next_message = res.choices[0].message.model_dump()
-            # total_cost += res._hidden_params["response_cost"]
+            usage = res.usage
+            if hasattr(usage, 'prompt_tokens') and usage.prompt_tokens is not None:
+                next_message['prompt_tokens'] = usage.prompt_tokens
+            if hasattr(usage, 'completion_tokens') and usage.completion_tokens is not None:
+                next_message['completion_tokens'] = usage.completion_tokens            
+            if hasattr(usage, 'completion_tokens_details') and hasattr(res.usage.completion_tokens_details, "reasoning_tokens"):
+                # print(f"CONG TEST {res.usage.completion_tokens_details}")
+                reasoning_tokens = res.usage.completion_tokens_details.reasoning_tokens
+                next_message['reasoning_tokens'] = reasoning_tokens
+            elif 'reasoning_content' in next_message and next_message['reasoning_content'] is not None:
+                # print(f"CONG TEST reasoning_content: {next_message['reasoning_content'][:16]}")
+                reasoning_tokens = count_reasoning_tokens(next_message['reasoning_content'], self.model)
+                # print(f"CONG TEST reasoning_tokens: {reasoning_tokens}")
+                next_message['reasoning_tokens'] = reasoning_tokens
+            else:
+                # print(f"CONG TEST {next_message}")
+                msg_content = next_message['content']
+                # print(f"CONG TEST msg_content: {msg_content}")
+                if msg_content is not None:
+                    reasoning_content = parse_reasoning_content(next_message['content'])
+                    reasoning_tokens = count_reasoning_tokens(reasoning_content, self.model)
+                    next_message['reasoning_tokens'] = reasoning_tokens
+                    
+            if "response_cost" in res._hidden_params and res._hidden_params["response_cost"] is not None:
+                total_cost += res._hidden_params["response_cost"]
+                next_message["response_cost"] = res._hidden_params["response_cost"]
+                
             action = message_to_action(next_message)
             env_response = env.step(action)
             reward = env_response.reward
@@ -105,3 +170,61 @@ def message_to_action(
         )
     else:
         return Action(name=RESPOND_ACTION_NAME, kwargs={"content": message["content"]})
+
+
+def parse_reasoning_content(response_text: str) -> str:
+    """
+    Parse the response content using <think>...</think> and return the reasoning content.
+    Args:
+        response_text (str): The response text from the model.
+    Returns:
+        reasoning_content (str): The parsed reasoning content.
+    """
+    # from transformers import AutoTokenizer
+
+    # try:
+    #     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # except Exception as e:
+    #     print(f"Error loading tokenizer for model {model_name}: {e}")
+    #     return 0
+
+    start_token = "<think>"
+    end_token = "</think>"
+
+    if start_token in response_text and end_token in response_text:
+        start_idx = response_text.find(start_token) + len(start_token)
+        end_idx = response_text.find(end_token, start_idx)
+        if end_idx > start_idx:
+            reasoning_content = response_text[start_idx:end_idx]
+            # Use hf transformers for accurate tokenization
+            # return len(tokenizer.encode(thinking_content))
+            # Estimate the number of tokens based on word count
+            return reasoning_content
+    return ""
+
+def count_reasoning_tokens(
+    reasoning_content: str,
+    model_name: str,
+) -> int:
+    """
+    Count the number of tokens in the reasoning content of the response text.
+    Args:
+        reasoning_content (str): The reasoning content from the model.
+        model_name (str): The name of the model used for tokenization.
+    Returns:
+        int: The number of tokens in the reasoning content.
+    """
+    # from transformers import AutoTokenizer
+
+    # try:
+    #     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # except Exception as e:
+    #     print(f"Error loading tokenizer for model {model_name}: {e}")
+    #     return 0
+
+    # Use hf transformers for accurate tokenization
+    # return len(tokenizer.encode(thinking_content))
+
+
+    # Estimate the number of tokens based on word count
+    return int(len(reasoning_content.strip().split()) / 0.75)

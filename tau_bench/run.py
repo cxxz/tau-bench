@@ -27,9 +27,9 @@ def run(config: RunConfig) -> List[EnvRunResult]:
 
     random.seed(config.seed)
     time_str = datetime.now().strftime("%m%d%H%M%S")
-    ckpt_path = f"{config.log_dir}/{config.agent_strategy}-{config.model.split('/')[-1]}-{config.temperature}_range_{config.start_index}-{config.end_index}_user-{config.user_model}-{config.user_strategy}_{time_str}.json"
-    if not os.path.exists(config.log_dir):
-        os.makedirs(config.log_dir)
+    result_dir = f"{config.log_dir}/{config.env}-{config.agent_strategy}"
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir)
 
     print(f"Loading user with strategy: {config.user_strategy}")
     env = get_env(
@@ -49,9 +49,18 @@ def run(config: RunConfig) -> List[EnvRunResult]:
     )
     results: List[EnvRunResult] = []
     lock = multiprocessing.Lock()
+    agent_think_postfix = "" 
+    if os.getenv("DISABLE_AGENT_MODEL_THINK") == "true":
+        agent_think_postfix = "-no-thinking"
+    elif os.getenv("AGENT_MODEL_REASONING_EFFORT") is not None:
+        agent_think_postfix = "-" + os.getenv("AGENT_MODEL_REASONING_EFFORT")
+    user_think_postfix = "-no-thinking" if os.getenv("DISABLE_USER_MODEL_THINK") == "true" else ""
     if config.task_ids and len(config.task_ids) > 0:
+        task_ids_str = [str(id) for id in config.task_ids]
+        ckpt_path = f"{result_dir}/agent-{config.model.split('/')[-1]}{agent_think_postfix}_user-{config.user_model.split('/')[-1]}{user_think_postfix}-{config.user_strategy}_tasks-{'+'.join(task_ids_str)}_{time_str}.json"
         print(f"Running tasks {config.task_ids} (checkpoint path: {ckpt_path})")
     else:
+        ckpt_path = f"{result_dir}/agent-{config.model.split('/')[-1]}{agent_think_postfix}_user-{config.user_model.split('/')[-1]}{user_think_postfix}-{config.user_strategy}_range-{config.start_index}-{end_index}_{time_str}.json"
         print(
             f"Running tasks {config.start_index} to {end_index} (checkpoint path: {ckpt_path})"
     )
@@ -85,6 +94,7 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                     info=res.info,
                     traj=res.messages,
                     trial=i,
+                    total_cost=res.total_cost,
                 )
             except Exception as e:
                 result = EnvRunResult(

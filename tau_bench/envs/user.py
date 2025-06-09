@@ -7,6 +7,9 @@ from litellm import completion
 
 from typing import Optional, List, Dict, Any, Union
 
+from dotenv import load_dotenv
+load_dotenv()
+
 DISABLE_USER_MODEL_THINK = os.getenv("DISABLE_USER_MODEL_THINK") == "true"
 
 class BaseUserSimulationEnv(abc.ABC):
@@ -47,12 +50,14 @@ class LLMUserSimulationEnv(BaseUserSimulationEnv):
         self.reset()
 
     def generate_next_message(self, messages: List[Dict[str, Any]]) -> str:
-        if self.disable_thinking and self.provider == "gemini":
+        # print(f"CONG TEST: self.disable_thinking {self.disable_thinking}")
+        if self.disable_thinking and "gemini" in self.model:
+            # print(f"CONG TEST disable thinking")
             res = completion(
                 model=self.model,
                 custom_llm_provider=self.provider,
                 messages=messages,
-                thinking={"type": "enabled", "budget_tokens": 0},
+                thinking={"type": "disabled", "budget_tokens": 0},
             )
         else:
             res = completion(
