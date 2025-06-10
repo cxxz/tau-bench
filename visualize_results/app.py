@@ -273,4 +273,4 @@ def render_markdown():
         return jsonify({'error': f'Failed to render markdown: {str(e)}'}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5678) 
+    app.run(host="0.0.0.0", debug=True, port=5678) 
