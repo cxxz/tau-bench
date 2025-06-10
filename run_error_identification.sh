@@ -20,7 +20,7 @@ TASK_IDS_CLEAN=$(echo "$TASK_IDS" | tr ' ' '-')
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 OUTPUT_JSON="err_ana_${BASENAME}_tasks-${TASK_IDS_CLEAN}_judge-${MODEL}_${TIMESTAMP}.json"
 
-export OPENAI_API_KEY="sk-yourkeyhere"  # Set your OpenAI API key here
+export OPENAI_API_KEY="sk-pOImTYDnVtg1pSkv1Suusw"  # Set your OpenAI API key here
 export OPENAI_BASE_URL="http://ai06.labs.hpecorp.net:4000"  # Set your OpenAI API base URL here
 
 set -e  # Exit on error

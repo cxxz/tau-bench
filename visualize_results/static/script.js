@@ -55,6 +55,96 @@ async function uploadFile() {
     }
 }
 
+// Load available files from server
+async function loadAvailableFiles() {
+    try {
+        const response = await fetch('/available-files');
+        const result = await response.json();
+        
+        if (response.ok) {
+            populateFileSelect(result.files);
+        } else {
+            showStatus(`Error loading files: ${result.error}`, 'danger');
+        }
+    } catch (error) {
+        showStatus(`Error loading files: ${error.message}`, 'danger');
+    }
+}
+
+// Populate the existing files dropdown
+function populateFileSelect(files) {
+    const select = document.getElementById('existingFileSelect');
+    select.innerHTML = '<option value="">Choose a file...</option>';
+    
+    files.forEach(file => {
+        const option = document.createElement('option');
+        option.value = file.filename;
+        
+        // Format file size
+        const sizeKB = Math.round(file.size / 1024);
+        const sizeStr = sizeKB > 1024 ? `${(sizeKB/1024).toFixed(1)}MB` : `${sizeKB}KB`;
+        
+        // Format date
+        const date = new Date(file.modified * 1000);
+        const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        
+        option.textContent = `${file.filename} (${sizeStr}, ${dateStr})`;
+        select.appendChild(option);
+    });
+    
+    // Enable/disable load button based on selection
+    select.addEventListener('change', function() {
+        const loadBtn = document.getElementById('load-existing-btn');
+        loadBtn.disabled = !this.value;
+    });
+}
+
+// Load existing file functionality
+async function loadExistingFile() {
+    const fileSelect = document.getElementById('existingFileSelect');
+    const filename = fileSelect.value;
+    
+    if (!filename) {
+        showStatus('Please select a file first.', 'danger');
+        return;
+    }
+    
+    // Show loading state
+    document.getElementById('load-btn-text').textContent = 'Loading...';
+    document.getElementById('load-spinner').classList.remove('d-none');
+    
+    try {
+        const response = await fetch('/load-existing', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ filename: filename })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showStatus(`File loaded successfully! Loaded ${result.total_tasks} tasks.`, 'success');
+            allTaskIds = result.task_ids;
+            filteredTaskIds = [...allTaskIds];
+            populateTaskSelect();
+            showMainInterface();
+            loadStats();
+            // Apply default filter to show task details
+            applyFilter();
+        } else {
+            showStatus(`Error: ${result.error}`, 'danger');
+        }
+    } catch (error) {
+        showStatus(`Error loading file: ${error.message}`, 'danger');
+    } finally {
+        // Reset loading state
+        document.getElementById('load-btn-text').textContent = 'Load File';
+        document.getElementById('load-spinner').classList.add('d-none');
+    }
+}
+
 // Show status messages
 function showStatus(message, type) {
     const statusDiv = document.getElementById('upload-status');
@@ -289,15 +379,18 @@ function createMessageElement(message, index, actionMatching = null, actualActio
     // Handle tool responses
     else if (role === 'tool') {
         const toolResultId = `tool-result-${index}`;
-        const formattedResult = formatToolResult(message.content || '');
+        const jsonResult = formatToolResultAsJson(message.content || '');
         
         div.innerHTML = `
             <div class="message-role">Tool Response</div>
             <div class="message-content">
                 <div class="tool-result">
-                    <strong>Function:</strong> ${message.name || 'unknown'}<br>
-                    <strong>Result:</strong>
-                    <div id="${toolResultId}" class="tool-result-content">${formattedResult}</div>
+                    <a href="#" class="show-result-link" onclick="toggleToolResult('${toolResultId}'); return false;">
+                        Show Result
+                    </a>
+                    <div id="${toolResultId}" class="tool-result-content collapsible-content" style="display: none;">
+                        ${jsonResult}
+                    </div>
                 </div>
             </div>
         `;
@@ -371,6 +464,24 @@ function toggleSystemMessage(systemId) {
         full.classList.add('show');
         preview.style.display = 'none';
         hint.style.display = 'none';
+    }
+}
+
+// Toggle tool result visibility
+function toggleToolResult(resultId) {
+    const resultDiv = document.getElementById(resultId);
+    const linkElement = resultDiv?.parentElement.querySelector('.show-result-link');
+    
+    if (resultDiv && linkElement) {
+        const isVisible = resultDiv.style.display !== 'none';
+        
+        if (isVisible) {
+            resultDiv.style.display = 'none';
+            linkElement.textContent = 'Show Result';
+        } else {
+            resultDiv.style.display = 'block';
+            linkElement.textContent = 'Hide Result';
+        }
     }
 }
 
@@ -758,6 +869,22 @@ function formatToolResult(content) {
     } catch (e) {
         // Not valid JSON, treat as plain text
         return `<span class="simple-result">${escapeHtml(content)}</span>`;
+    }
+}
+
+// Format tool result as JSON for collapsed display
+function formatToolResultAsJson(content) {
+    if (!content) return '<em class="text-muted">No result</em>';
+    
+    // Try to parse as JSON first to validate and pretty-print
+    try {
+        const parsed = JSON.parse(content);
+        // Pretty-print the JSON with 2-space indentation
+        const prettyJson = JSON.stringify(parsed, null, 2);
+        return `<pre class="json-result"><code>${escapeHtml(prettyJson)}</code></pre>`;
+    } catch (e) {
+        // Not valid JSON, treat as plain text but still wrap in code block
+        return `<pre class="json-result"><code>${escapeHtml(content)}</code></pre>`;
     }
 }
 

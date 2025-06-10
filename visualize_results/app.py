@@ -37,12 +37,91 @@ def parse_results_file(filepath):
         return None
 
 def validate_filename(filename):
-    """Validate that filename follows expected pattern"""
-    return filename.startswith('agent-') and filename.endswith('.json')
+    """Validate that filename is a JSON file"""
+    return filename.lower().endswith('.json')
+
+def get_available_files():
+    """Get list of available JSON files in uploads folder"""
+    try:
+        files = []
+        upload_path = app.config['UPLOAD_FOLDER']
+        
+        if os.path.exists(upload_path):
+            for filename in os.listdir(upload_path):
+                if validate_filename(filename):
+                    filepath = os.path.join(upload_path, filename)
+                    if os.path.isfile(filepath):
+                        # Get file size and modification time
+                        stat = os.stat(filepath)
+                        files.append({
+                            'filename': filename,
+                            'size': stat.st_size,
+                            'modified': stat.st_mtime
+                        })
+        
+        # Sort by modification time (newest first)
+        files.sort(key=lambda x: x['modified'], reverse=True)
+        return files
+    except Exception as e:
+        print(f"Error getting available files: {e}")
+        return []
 
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/available-files')
+def available_files():
+    """Get list of available files in uploads folder"""
+    files = get_available_files()
+    return jsonify({
+        'success': True,
+        'files': files
+    })
+
+@app.route('/load-existing', methods=['POST'])
+def load_existing_file():
+    """Load an existing file from uploads folder"""
+    global current_results, ground_truth_tasks
+    
+    data = request.get_json()
+    if not data or 'filename' not in data:
+        return jsonify({'error': 'No filename provided'}), 400
+    
+    filename = data['filename']
+    
+    # Validate filename for security
+    if not validate_filename(filename):
+        return jsonify({'error': 'Invalid file type. Only JSON files are allowed.'}), 400
+    
+    # Secure the filename and construct path
+    secure_name = secure_filename(filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_name)
+    
+    # Check if file exists
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'File not found'}), 404
+    
+    # Parse results
+    current_results = parse_results_file(filepath)
+    if current_results is None:
+        return jsonify({'error': 'Failed to parse results file'}), 400
+    
+    # Load ground truth
+    ground_truth_tasks = load_ground_truth()
+    if ground_truth_tasks is None:
+        return jsonify({'error': 'Failed to load ground truth tasks'}), 400
+    
+    # Get available task IDs
+    task_ids = [result['task_id'] for result in current_results]
+    
+    return jsonify({
+        'success': True,
+        'task_ids': task_ids,
+        'total_tasks': len(current_results),
+        'filename': filename,
+        'source': 'existing'
+    })
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -56,7 +135,7 @@ def upload_file():
         return jsonify({'error': 'No file selected'}), 400
     
     if not validate_filename(file.filename):
-        return jsonify({'error': 'Invalid filename format. Expected: agent-<model>_user-<model>-<xxx>.json'}), 400
+        return jsonify({'error': 'Invalid file type. Only JSON files are allowed.'}), 400
     
     # Save uploaded file
     filename = secure_filename(file.filename)
@@ -80,7 +159,8 @@ def upload_file():
         'success': True,
         'task_ids': task_ids,
         'total_tasks': len(current_results),
-        'filename': filename
+        'filename': filename,
+        'source': 'upload'
     })
 
 @app.route('/task/<int:task_id>')

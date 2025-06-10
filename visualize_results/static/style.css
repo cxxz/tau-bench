@@ -127,6 +127,38 @@ body {
     margin-top: 5px;
 }
 
+.show-result-link {
+    color: #007bff;
+    text-decoration: none;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+
+.show-result-link:hover {
+    color: #0056b3;
+    text-decoration: underline;
+}
+
+.json-result {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    padding: 12px;
+    margin: 8px 0;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.85em;
+    overflow-x: auto;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.json-result code {
+    background: none;
+    padding: 0;
+    color: #495057;
+    font-family: inherit;
+}
+
 .simple-result {
     font-family: 'Courier New', monospace;
     background-color: #f8f9fa;
