@@ -1,5 +1,6 @@
 #Run result artifacts
 results/**
+*/uploads/**
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
