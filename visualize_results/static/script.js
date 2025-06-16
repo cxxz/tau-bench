@@ -357,8 +357,10 @@ function createMessageElement(message, index, actionMatching = null, actualActio
             let highlightClass = '';
             
             if (showGroundTruth && actionInfo) {
-                if (actionInfo.matched) {
+                if (actionInfo.type === 'matched' && actionInfo.matchType === 'perfect') {
                     highlightClass = 'action-highlight-matched';
+                } else if (actionInfo.type === 'partial' && actionInfo.matchType === 'name_only') {
+                    highlightClass = 'action-highlight-partial';
                 } else if (actionInfo.type === 'extra') {
                     highlightClass = 'action-highlight-extra';
                 } else {
@@ -366,7 +368,7 @@ function createMessageElement(message, index, actionMatching = null, actualActio
                 }
             }
             
-            toolCallsHtml += createToolCallElement(call, highlightClass);
+            toolCallsHtml += createToolCallElement(call, highlightClass, actionInfo);
         });
         
         div.innerHTML = `
@@ -407,7 +409,7 @@ function createMessageElement(message, index, actionMatching = null, actualActio
 }
 
 // Create tool call element
-function createToolCallElement(toolCall, highlightClass = '') {
+function createToolCallElement(toolCall, highlightClass = '', actionInfo = null) {
     const callId = `tool-call-${Math.random().toString(36).substr(2, 9)}`;
     const args = toolCall.function?.arguments || '{}';
     const functionName = toolCall.function?.name || 'unknown';
@@ -420,12 +422,19 @@ function createToolCallElement(toolCall, highlightClass = '') {
         formattedArgs = args;
     }
     
+    // Add match status label for partial matches
+    let matchStatusLabel = '';
+    if (actionInfo && actionInfo.type === 'partial' && actionInfo.matchType === 'name_only') {
+        matchStatusLabel = '<div class="match-status-label">⚠️ Mismatched Arguments</div>';
+    }
+    
     return `
         <div class="tool-call ${highlightClass}">
             <div class="tool-call-header" onclick="toggleToolCall('${callId}')">
                 <span class="tool-call-name">🔧 ${functionName}</span>
                 <span class="tool-call-toggle" id="${callId}-toggle">Show Details</span>
             </div>
+            ${matchStatusLabel}
             <div class="tool-call-details collapsible-content" id="${callId}-details">
                 <div><strong>Arguments:</strong></div>
                 <div class="tool-arguments">${formattedArgs}</div>
@@ -529,8 +538,10 @@ function displayGroundTruth(groundTruth, actionMatching = null) {
             let highlightClass = '';
             
             if (actionInfo) {
-                if (actionInfo.matched) {
+                if (actionInfo.type === 'matched' && actionInfo.matchType === 'perfect') {
                     highlightClass = 'action-highlight-matched';
+                } else if (actionInfo.type === 'partial' && actionInfo.matchType === 'name_only') {
+                    highlightClass = 'action-highlight-partial';
                 } else if (actionInfo.type === 'missing') {
                     highlightClass = 'action-highlight-missing';
                 } else {
@@ -538,9 +549,16 @@ function displayGroundTruth(groundTruth, actionMatching = null) {
                 }
             }
             
+            // Add match status label for ground truth actions
+            let matchStatusLabel = '';
+            if (actionInfo && actionInfo.type === 'partial' && actionInfo.matchType === 'name_only') {
+                matchStatusLabel = '<div class="match-status-label">⚠️ Arguments Not Matched</div>';
+            }
+            
             return `
                 <div class="ground-truth-action ${highlightClass}">
                     <div class="ground-truth-action-name">🔧 ${index + 1}. ${action.name}</div>
+                    ${matchStatusLabel}
                     <div class="ground-truth-args">${JSON.stringify(action.kwargs, null, 2)}</div>
                 </div>
             `;
@@ -658,14 +676,17 @@ function generateActionComparison(expectedActions, result) {
     } else if (expectedActions.length > 0 && actualActions.length === 0) {
         comparisonHtml += `<div class="summary-item summary-error">❌ Missing all expected actions (${expectedActions.length})</div>`;
     } else {
-        // Improved matching algorithm
+        // Improved matching algorithm with argument comparison
         const comparison = compareActionSequences(expectedActions, actualActions);
         
         if (comparison.exactMatch) {
             comparisonHtml += '<div class="summary-item summary-success">✅ Perfect action sequence match</div>';
         } else {
-            if (comparison.matched > 0) {
-                comparisonHtml += `<div class="summary-item summary-success">✅ ${comparison.matched} actions matched</div>`;
+            if (comparison.perfectMatches > 0) {
+                comparisonHtml += `<div class="summary-item summary-success">✅ ${comparison.perfectMatches} actions perfectly matched</div>`;
+            }
+            if (comparison.nameOnlyMatches > 0) {
+                comparisonHtml += `<div class="summary-item summary-warning">⚠️ ${comparison.nameOnlyMatches} actions matched by name only (mismatched arguments)</div>`;
             }
             if (comparison.missing > 0) {
                 comparisonHtml += `<div class="summary-item summary-error">❌ ${comparison.missing} actions missing</div>`;
@@ -709,37 +730,110 @@ function extractActualActions(result) {
     return actions;
 }
 
-// Compare action sequences with better matching
+// Compare action sequences with better matching (including arguments)
 function compareActionSequences(expected, actual) {
-    const expectedNames = expected.map(a => a.name);
-    const actualNames = actual.map(a => a.name);
+    // Helper function to normalize arguments for comparison
+    function normalizeArgs(args) {
+        if (typeof args === 'string') {
+            try {
+                return JSON.parse(args);
+            } catch {
+                return {};
+            }
+        }
+        return args || {};
+    }
     
-    // Check for exact match
-    const exactMatch = JSON.stringify(expectedNames) === JSON.stringify(actualNames);
+    // Helper function to deeply compare two objects
+    function deepEqual(obj1, obj2) {
+        return JSON.stringify(sortObjectKeys(obj1)) === JSON.stringify(sortObjectKeys(obj2));
+    }
     
-    // Count matches
-    let matched = 0;
-    const expectedCopy = [...expectedNames];
-    const actualCopy = [...actualNames];
+    // Helper function to sort object keys recursively for consistent comparison
+    function sortObjectKeys(obj) {
+        if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+            return obj;
+        }
+        const sorted = {};
+        Object.keys(obj).sort().forEach(key => {
+            sorted[key] = sortObjectKeys(obj[key]);
+        });
+        return sorted;
+    }
     
-    // Remove matched actions
-    actualCopy.forEach(name => {
-        const index = expectedCopy.indexOf(name);
-        if (index !== -1) {
-            expectedCopy.splice(index, 1);
-            matched++;
+    // Create normalized versions for comparison
+    const expectedNormalized = expected.map(a => ({
+        name: a.name,
+        args: normalizeArgs(a.kwargs)
+    }));
+    
+    const actualNormalized = actual.map(a => ({
+        name: a.name,
+        args: normalizeArgs(a.args)
+    }));
+    
+    // Check for exact match (both names and arguments)
+    const exactMatch = JSON.stringify(expectedNormalized.map(a => ({name: a.name, args: sortObjectKeys(a.args)}))) === 
+                      JSON.stringify(actualNormalized.map(a => ({name: a.name, args: sortObjectKeys(a.args)})));
+    
+    // Count different types of matches
+    let perfectMatches = 0;  // Both name and args match
+    let nameOnlyMatches = 0; // Name matches but args don't
+    let totalMatched = 0;    // Any kind of match
+    
+    const expectedCopy = [...expectedNormalized];
+    const actualCopy = [...actualNormalized];
+    const matchedIndices = new Set();
+    
+    // First pass: find perfect matches (name + args)
+    actualCopy.forEach((actualAction, actualIndex) => {
+        const perfectMatchIndex = expectedCopy.findIndex((expectedAction, expectedIndex) => 
+            !matchedIndices.has(expectedIndex) &&
+            actualAction.name === expectedAction.name && 
+            deepEqual(actualAction.args, expectedAction.args)
+        );
+        
+        if (perfectMatchIndex !== -1) {
+            perfectMatches++;
+            totalMatched++;
+            matchedIndices.add(perfectMatchIndex);
         }
     });
     
-    const missing = expectedCopy.length;
-    const extra = actualNames.length - matched;
+    // Second pass: find name-only matches for remaining actions
+    actualCopy.forEach((actualAction, actualIndex) => {
+        // Skip if this actual action already had a perfect match
+        const alreadyPerfectMatch = expectedCopy.some((expectedAction, expectedIndex) => 
+            matchedIndices.has(expectedIndex) &&
+            actualAction.name === expectedAction.name && 
+            deepEqual(actualAction.args, expectedAction.args)
+        );
+        
+        if (!alreadyPerfectMatch) {
+            const nameMatchIndex = expectedCopy.findIndex((expectedAction, expectedIndex) => 
+                !matchedIndices.has(expectedIndex) &&
+                actualAction.name === expectedAction.name
+            );
+            
+            if (nameMatchIndex !== -1) {
+                nameOnlyMatches++;
+                totalMatched++;
+                matchedIndices.add(nameMatchIndex);
+            }
+        }
+    });
     
-    // Check if order is wrong (if we have matches but not exact)
-    const wrongOrder = matched > 0 && !exactMatch && missing === 0 && extra === 0;
+    const missing = expectedNormalized.length - totalMatched;
+    const extra = actualNormalized.length - totalMatched;
+    
+    // Check if order is wrong (if we have matches but not exact sequence)
+    const wrongOrder = totalMatched > 0 && !exactMatch && missing === 0 && extra === 0;
     
     return {
         exactMatch,
-        matched,
+        matched: totalMatched,
+        perfectMatches,
+        nameOnlyMatches,
         missing,
         extra,
         wrongOrder
@@ -749,8 +843,35 @@ function compareActionSequences(expected, actual) {
 // Calculate detailed action matching for highlighting
 function calculateActionMatching(expectedActions, result) {
     const actualActions = extractActualActions(result);
-    const expectedNames = expectedActions.map(a => a.name);
-    const actualNames = actualActions.map(a => a.name);
+    
+    // Helper function to normalize arguments for comparison
+    function normalizeArgs(args) {
+        if (typeof args === 'string') {
+            try {
+                return JSON.parse(args);
+            } catch {
+                return {};
+            }
+        }
+        return args || {};
+    }
+    
+    // Helper function to deeply compare two objects
+    function deepEqual(obj1, obj2) {
+        return JSON.stringify(sortObjectKeys(obj1)) === JSON.stringify(sortObjectKeys(obj2));
+    }
+    
+    // Helper function to sort object keys recursively for consistent comparison
+    function sortObjectKeys(obj) {
+        if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+            return obj;
+        }
+        const sorted = {};
+        Object.keys(obj).sort().forEach(key => {
+            sorted[key] = sortObjectKeys(obj[key]);
+        });
+        return sorted;
+    }
     
     // Create detailed matching maps
     const expectedMatching = {};
@@ -758,24 +879,59 @@ function calculateActionMatching(expectedActions, result) {
     
     // Mark all as unmatched initially
     expectedActions.forEach((action, index) => {
-        expectedMatching[index] = { matched: false, actionName: action.name, type: 'missing' };
+        expectedMatching[index] = { 
+            matched: false, 
+            actionName: action.name, 
+            type: 'missing',
+            matchType: 'none'
+        };
     });
     
     actualActions.forEach((action, index) => {
-        actualMatching[index] = { matched: false, actionName: action.name, type: 'extra' };
+        actualMatching[index] = { 
+            matched: false, 
+            actionName: action.name, 
+            type: 'extra',
+            matchType: 'none'
+        };
     });
     
-    // Find matches (simple name-based matching)
+    // First pass: find perfect matches (name + arguments)
     expectedActions.forEach((expectedAction, expectedIndex) => {
+        if (expectedMatching[expectedIndex].matched) return;
+        
         const matchingActualIndex = actualActions.findIndex((actualAction, actualIndex) => 
-            actualAction.name === expectedAction.name && !actualMatching[actualIndex].matched
+            !actualMatching[actualIndex].matched &&
+            actualAction.name === expectedAction.name && 
+            deepEqual(normalizeArgs(actualAction.args), normalizeArgs(expectedAction.kwargs))
         );
         
         if (matchingActualIndex !== -1) {
             expectedMatching[expectedIndex].matched = true;
             expectedMatching[expectedIndex].type = 'matched';
+            expectedMatching[expectedIndex].matchType = 'perfect';
             actualMatching[matchingActualIndex].matched = true;
             actualMatching[matchingActualIndex].type = 'matched';
+            actualMatching[matchingActualIndex].matchType = 'perfect';
+        }
+    });
+    
+    // Second pass: find name-only matches for remaining actions
+    expectedActions.forEach((expectedAction, expectedIndex) => {
+        if (expectedMatching[expectedIndex].matched) return;
+        
+        const matchingActualIndex = actualActions.findIndex((actualAction, actualIndex) => 
+            !actualMatching[actualIndex].matched &&
+            actualAction.name === expectedAction.name
+        );
+        
+        if (matchingActualIndex !== -1) {
+            expectedMatching[expectedIndex].matched = true;
+            expectedMatching[expectedIndex].type = 'partial';
+            expectedMatching[expectedIndex].matchType = 'name_only';
+            actualMatching[matchingActualIndex].matched = true;
+            actualMatching[matchingActualIndex].type = 'partial';
+            actualMatching[matchingActualIndex].matchType = 'name_only';
         }
     });
     

@@ -531,6 +531,49 @@ body {
     font-size: 1.2em;
 }
 
+.action-highlight-partial {
+    border-left: 4px solid #fd7e14 !important;
+    background-color: #fff8f0 !important;
+    position: relative;
+}
+
+.action-highlight-partial::before {
+    content: "⚠";
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    color: #fd7e14;
+    font-weight: bold;
+    font-size: 1.2em;
+}
+
+/* Match status labels */
+.match-status-label {
+    font-size: 0.85em;
+    padding: 4px 8px;
+    margin: 4px 0;
+    border-radius: 4px;
+    text-align: center;
+    font-weight: 500;
+    background-color: #fd7e14;
+    color: white;
+}
+
+.match-status-label.perfect-match {
+    background-color: #28a745;
+    color: white;
+}
+
+.match-status-label.extra-action {
+    background-color: #ffc107;
+    color: #212529;
+}
+
+.match-status-label.missing-action {
+    background-color: #dc3545;
+    color: white;
+}
+
 /* System message styling */
 .system-message-left {
     margin-left: 0 !important;
