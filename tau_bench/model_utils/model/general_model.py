@@ -146,6 +146,8 @@ def model_factory(
     if isinstance(platform, str):
         platform = Platform(platform)
     if platform == Platform.OPENAI:
+        if model_id.startswith("o"):
+            temperature = 1.0
         from tau_bench.model_utils.model.openai import OpenAIModel
 
         return OpenAIModel(model=model_id, api_key=api_key, temperature=temperature)

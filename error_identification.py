@@ -64,6 +64,18 @@ class FaultTypeResult(BaseModel):
             "description": self.description,
         }
 
+class GoalCompletionResult(BaseModel):
+    task_id: int
+    goal_completed: bool
+    rationale: str
+
+    def model_dump(self) -> Dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "goal_completed": self.goal_completed,
+            "rationale": self.rationale,
+        }
+
 class GradingStrategy(Enum):
     ACTIONS = "actions"
     OUTPUTS = "outputs"
@@ -101,8 +113,8 @@ def display_context(user_instruction: str, ground_truth_actions: List[Action], g
 ----- start required outputs -----
 {ground_truth_outputs}
 ----- end required outputs -----"""
-    else:
-        context += f"""
+
+    context += f"""
 
 ----- start ground truth action sequence -----
 {display_actions(ground_truth_actions)}
@@ -188,6 +200,53 @@ Return your response as a JSON object with the following format:
         
         return FaultAssignmentResult(task_id=task_id, author=author, description=rationale)
     
+    with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+        task_ids = [r.task_id for r in results]
+        user_instructions = [r.user_instruction for r in results]
+        trajs = [r.traj for r in results]
+        ground_truth_actions = [r.ground_truth_actions for r in results]
+        ground_truth_outputs = [r.ground_truth_outputs for r in results]
+        results = list(executor.map(assign_fault, task_ids, user_instructions, trajs, ground_truth_actions, ground_truth_outputs))
+    return results
+
+
+def goal_completion_analysis(api: API, results: List[OriginalResult], max_concurrency: int) -> List[GoalCompletionResult]:
+    def assign_fault(task_id: int, user_instruction: str, traj: List[Dict[str, Any]], ground_truth_actions: List[Action], ground_truth_outputs: List[str]) -> GoalCompletionResult:
+        grading_strategy = GradingStrategy.OUTPUTS if len(ground_truth_outputs) > 0 else GradingStrategy.ACTIONS
+        ctx_desc = context_description(grading_strategy)
+        context = display_context(user_instruction, ground_truth_actions, ground_truth_outputs, traj)
+        
+        instruction = f"""{ctx_desc}
+PLEASE NOTE that the ground truth action sequence is one example of a valid sequence that leads to the goal state. However, it MIGHT NOT be the only valid sequence.
+
+Your task is to determine whether the Assistant completed the goal state. If the Assistant completed the goal state, return "yes". If the assistant did not complete the goal state, return "no".
+
+Return your response as a JSON object with the following format:
+{{
+    "rationale": "Your detailed reasoning for why the goal state was completed or not completed.",
+    "goal_completed": "yes" | "no"
+}}"""
+        
+        # print(f"DEBUG full instruction: \n============\n{instruction}\n============\n")
+        # print(f"DEBUG full context: \n============\n{context}\n============\n")
+
+        response = api.generate(instruction=instruction, text=context)
+        
+        try:
+            # Parse the JSON response
+            result_json = json.loads(response)
+            rationale = result_json.get("rationale", "No rationale provided")
+            goal_completed = result_json.get("goal_completed", "no").lower()
+            
+            # Convert string to boolean
+            goal_completed_bool = goal_completed == "yes"
+            
+        except (json.JSONDecodeError, KeyError) as e:
+            rationale = f"Error parsing response: {str(e)}. Original response: {response}"
+            goal_completed_bool = False
+            
+        return GoalCompletionResult(task_id=task_id, goal_completed=goal_completed_bool, rationale=rationale)
+            
     with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
         task_ids = [r.task_id for r in results]
         user_instructions = [r.user_instruction for r in results]
@@ -290,6 +349,7 @@ def main() -> None:
     
     print(f"Performing fault assignment analysis on {len(original_results)} failed trajectories with a max concurrency of {args.max_concurrency}...")
     fault_assignment_results = fault_assignment_analysis_v2(api=api, results=original_results, max_concurrency=args.max_concurrency)
+    goal_completion_results = goal_completion_analysis(api=api, results=original_results, max_concurrency=args.max_concurrency)
     failures_due_to_agent = [original_results[i] for i, r in enumerate(fault_assignment_results) if r.author == FaultAuthor.AGENT]
     print(f"Performing fault type analysis on {len(failures_due_to_agent)} failures that have been marked as being caused by the agent with a max concurrency of {args.max_concurrency}...")
     fault_type_results = fault_type_analysis(api=api, results=failures_due_to_agent, max_concurrency=args.max_concurrency)
@@ -319,6 +379,7 @@ Fault type distribution (only failures marked as being caused by the agent):""")
     output_data = {
         "fault_assignment_analysis": [r.model_dump() for r in fault_assignment_results],
         "fault_type_analysis": [r.model_dump() for r in fault_type_results],
+        "goal_completion_analysis": [r.model_dump() for r in goal_completion_results],
     }
     
     # Add missing task records if any
