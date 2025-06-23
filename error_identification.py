@@ -144,6 +144,59 @@ def fault_assignment_analysis(api: API, results: List[OriginalResult], max_concu
     return results
 
 
+def fault_assignment_analysis_v2(api: API, results: List[OriginalResult], max_concurrency: int) -> List[FaultAssignmentResult]:
+    def assign_fault(task_id: int, user_instruction: str, traj: List[Dict[str, Any]], ground_truth_actions: List[Action], ground_truth_outputs: List[str]) -> FaultAssignmentResult:
+        str_to_author = {
+            "user": FaultAuthor.USER,
+            "agent": FaultAuthor.AGENT,
+            "environment": FaultAuthor.ENVIRONMENT,
+        }
+        grading_strategy = GradingStrategy.OUTPUTS if len(ground_truth_outputs) > 0 else GradingStrategy.ACTIONS
+        ctx_desc = context_description(grading_strategy)
+        context = display_context(user_instruction, ground_truth_actions, ground_truth_outputs, traj)
+        
+        instruction = f"""{ctx_desc}
+
+Determine the entity that is responsible for the fault and provide your reasoning:
+1. The user is responsible for the fault if they caused an action that was not grounded in the user instruction.
+2. The agent is responsible for the fault if they took an action that was not correct (or took the action with the wrong arguments).
+3. The environment is responsible for all other faults.
+
+Please note that the user instruction is provided to the simulated user but remains hidden from the agent. The agent can only view the user messages that appear in the conversation.
+
+Return your response as a JSON object with the following format:
+{{
+    "rationale": "Your detailed reasoning for why this entity is responsible for the fault.",
+    "responsible_entity": "user" | "agent" | "environment"
+}}"""
+        
+        response = api.generate(instruction=instruction, text=context)
+        
+        try:
+            # Parse the JSON response
+            result_json = json.loads(response)
+            rationale = result_json.get("rationale", "No rationale provided")
+            responsible_entity = result_json.get("responsible_entity", "environment").lower()
+            
+            # Map string to enum, default to environment if invalid
+            author = str_to_author.get(responsible_entity, FaultAuthor.ENVIRONMENT)
+            
+        except (json.JSONDecodeError, KeyError) as e:
+            # Fallback: if JSON parsing fails, default to environment with error message
+            author = FaultAuthor.ENVIRONMENT
+            rationale = f"Error parsing response: {str(e)}. Original response: {response}"
+        
+        return FaultAssignmentResult(task_id=task_id, author=author, description=rationale)
+    
+    with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+        task_ids = [r.task_id for r in results]
+        user_instructions = [r.user_instruction for r in results]
+        trajs = [r.traj for r in results]
+        ground_truth_actions = [r.ground_truth_actions for r in results]
+        ground_truth_outputs = [r.ground_truth_outputs for r in results]
+        results = list(executor.map(assign_fault, task_ids, user_instructions, trajs, ground_truth_actions, ground_truth_outputs))
+    return results
+
 def fault_type_analysis(api: API, results: List[OriginalResult], max_concurrency: int) -> List[FaultTypeResult]:
     def get_fault_type(task_id: int, user_instruction: str, traj: List[Dict[str, Any]], ground_truth_actions: List[Action], ground_truth_outputs: List[str]) -> FaultTypeResult:
         idx_to_fault_type = {
@@ -236,18 +289,23 @@ def main() -> None:
             })
     
     print(f"Performing fault assignment analysis on {len(original_results)} failed trajectories with a max concurrency of {args.max_concurrency}...")
-    fault_assignment_results = fault_assignment_analysis(api=api, results=original_results, max_concurrency=args.max_concurrency)
+    fault_assignment_results = fault_assignment_analysis_v2(api=api, results=original_results, max_concurrency=args.max_concurrency)
     failures_due_to_agent = [original_results[i] for i, r in enumerate(fault_assignment_results) if r.author == FaultAuthor.AGENT]
     print(f"Performing fault type analysis on {len(failures_due_to_agent)} failures that have been marked as being caused by the agent with a max concurrency of {args.max_concurrency}...")
     fault_type_results = fault_type_analysis(api=api, results=failures_due_to_agent, max_concurrency=args.max_concurrency)
-    print(f"""Reviewed {len(fault_assignment_results)} trajectories:
-
+    print(f"Reviewed {len(fault_assignment_results)} trajectories:")
+    
+    if len(fault_assignment_results) > 0:
+        print(f"""
 Author fault distribution:
   - User: {sum(1 for r in fault_assignment_results if r.author == FaultAuthor.USER)} ({round(sum(1 for r in fault_assignment_results if r.author == FaultAuthor.USER) / len(fault_assignment_results) * 100, 2)}%)
   - Agent: {sum(1 for r in fault_assignment_results if r.author == FaultAuthor.AGENT)} ({round(sum(1 for r in fault_assignment_results if r.author == FaultAuthor.AGENT) / len(fault_assignment_results) * 100, 2)}%)
   - Environment (otherwise case): {sum(1 for r in fault_assignment_results if r.author == FaultAuthor.ENVIRONMENT)} ({round(sum(1 for r in fault_assignment_results if r.author == FaultAuthor.ENVIRONMENT) / len(fault_assignment_results) * 100, 2)}%)
 
 Fault type distribution (only failures marked as being caused by the agent):""")
+    else:
+        print("\nNo trajectories found to analyze.")
+        print("\nFault type distribution (only failures marked as being caused by the agent):")
     
     if len(fault_type_results) > 0:
         print(f"""  - Called wrong tool: {sum(1 for r in fault_type_results if r.fault_type == FaultType.CALLED_WRONG_TOOL)} ({round(sum(1 for r in fault_type_results if r.fault_type == FaultType.CALLED_WRONG_TOOL) / len(fault_type_results) * 100, 2)}%)
