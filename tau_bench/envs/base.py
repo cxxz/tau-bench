@@ -151,7 +151,7 @@ class Env(object):
                     if (
                         action.name == RESPOND_ACTION_NAME
                         and output.lower()
-                        in action.kwargs["content"].lower().replace(",", "")
+                        in action.kwargs["content"].lower().replace(",", "").replace(" ", "")
                     ):
                         found = True
                         break

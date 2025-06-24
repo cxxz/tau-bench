@@ -1953,7 +1953,7 @@ TASKS_TEST = [
     Task(
         annotator="2",
         user_id="yusuf_taylor_7149",
-        instruction="You are Yusuf Taylor from San Jose, CA, 95154. You recently placed two orders, and now you would like to make several changes and checks. You'll first inquire about the status difference between your two orders, #W2702727 and #W8268610, since both are \"pending,\" but one was placed much earlier in the year. You are considering cancelling the older order as you find the wait time unreasonable. If the agent cannot guarantee the older order will be processed within 5 days, you want to cancel it. You also want to confirm the total price of the refund.\n\nFor order #W2702727, you intend to switch the shipping address to your new home in a different city because you plan to move prior to its delivery next month. Your new address is 1234 Elm St, Springfield, IL, 62701. You want the agent to confirm the change and ensure the order will be delivered to the new address. You also want to confirm the total price of the order after the address change.\n\nYour approach will be firm, as you are unhappy with the pending status's duration but try to make all requests in one go and ask for them to be resolved efficiently and correctly in context with each other.",
+        instruction="You are Yusuf Taylor from San Jose, CA, 95154. You recently placed two orders, and now you would like to make several changes and checks. You'll first inquire about the status difference between your two orders, #W2702727 and #W8268610, since both are \"pending,\" but the order #W8268610 was placed much earlier in the year. You are considering cancelling the older order as you find the wait time unreasonable. If the agent cannot guarantee the older order will be processed within 5 days, you want to cancel it. You also want to confirm the total price of the refund.\n\nFor order #W2702727, you intend to switch the shipping address to your new home in a different city because you plan to move prior to its delivery next month. Your new address is 1234 Elm St, Springfield, IL, 62701. You want the agent to confirm the change and ensure the order will be delivered to the new address. You also want to confirm the total price of the order after the address change.\n\nYour approach will be firm, as you are unhappy with the pending status's duration but try to make all requests in one go and ask for them to be resolved efficiently and correctly in context with each other.",
         actions=[
             Action(
                 name="find_user_id_by_name_zip",
@@ -2249,7 +2249,7 @@ TASKS_TEST = [
     Task(
         annotator="4",
         user_id="ivan_khan_7475",
-        instruction="You name is Ivan Khan and your zip code is 28243. You are polite, optimistic, organized. You made some mistake and ordered an order sent to your son's address in Washington DC, and you want to modify it to your default address in Charlotte (you do not want to mention it, but it is in your user profile the agent can look up) because he is coming back home. You also want to adjust the desk lamp to be black color, and the backpack to be medium size and polyester material instead. If multiple colors are available for the backpack, you prefer grey. If the agent asks for payment method, you say GC initially, but if the agent does not allow it or asks you to confirm it, you change your mind to PayPal, and decide to only modify the backpack.",
+        instruction="You name is Ivan Khan and your zip code is 28243. You are polite, optimistic, organized. You made some mistake and ordered an order sent to your son's address in Washington DC, and you want to modify it to your default address in Charlotte, which is the order that contains 'desk lamp' (you do not want to mention it, but it is in your user profile the agent can look up) because he is coming back home. You also want to adjust the desk lamp to be black color, and the backpack to be medium size and polyester material instead. If multiple colors are available for the backpack, you prefer grey. If the agent asks for payment method, you say GC initially, but if the agent does not allow it or asks you to confirm it, you change your mind to PayPal, and decide to only modify the backpack.",
         actions=[
             Action(
                 name="modify_pending_order_address",
@@ -2340,7 +2340,7 @@ TASKS_TEST = [
                     "order_id": "#W5166363",
                     "item_ids": ["3334537816"],
                     "new_item_ids": ["3265035808"],
-                    "payment_method_id": "credit_card_4466831",
+                    "payment_method_id": "paypal_5914760",
                 },
             ),
         ],
@@ -2366,7 +2366,7 @@ TASKS_TEST = [
     Task(
         annotator="4",
         user_id="ava_nguyen_6646",
-        instruction="You name is Ava Nguyen and your zip code is 94128. You are polite, optimistic, busy. You ordered a fleece jacket by mistake and want to remove it from your pending order. If removing one item is not possible, cancel the whole order. You also want to modify the skateboard to maple material, 34 inch, graphic. If not availabe, cancel the order so that you can order again. You also want to know the total prices for the grills you have paid for.",
+        instruction="You name is Ava Nguyen and your zip code is 94128. You are polite, optimistic, busy. You ordered a fleece jacket by mistake and want to remove it from your pending order. If removing one item is not possible, cancel the whole order. You also want to modify the skateboard to maple material, 34 inch, graphic. If not availabe, cancel the order saying you no longer need it so that you can order again. You also want to know the total prices for the grills you have paid for.",
         actions=[
             Action(
                 name="cancel_pending_order",
@@ -3230,25 +3230,25 @@ TASKS_TEST = [
             Action(
                 name="modify_pending_order_address",
                 kwargs={
-                    "order_id": "#W1092119",
-                    "address1": "760 Elm Avenue",
-                    "address2": "Suite 564",
+                    "order_id": "#W1603792",
+                    "address1": "592 Elm Avenue",
+                    "address2": "Suite 978",
                     "city": "Houston",
                     "state": "TX",
                     "country": "USA",
-                    "zip": "77034",
+                    "zip": "77242",
                 },
             ),
             Action(
                 name="modify_user_address",
                 kwargs={
                     "user_id": "sophia_martin_8570",
-                    "address1": "760 Elm Avenue",
-                    "address2": "Suite 564",
+                    "address1": "592 Elm Avenue",
+                    "address2": "Suite 978",
                     "city": "Houston",
                     "state": "TX",
                     "country": "USA",
-                    "zip": "77034",
+                    "zip": "77242",
                 },
             ),
             Action(
