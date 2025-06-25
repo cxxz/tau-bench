@@ -150,7 +150,7 @@ class Env(object):
                 for action in self.actions:
                     if (
                         action.name == RESPOND_ACTION_NAME
-                        and output.lower()
+                        and output.lower().replace(",", "").replace(" ", "")
                         in action.kwargs["content"].lower().replace(",", "").replace(" ", "")
                     ):
                         found = True
