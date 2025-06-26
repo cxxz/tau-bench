@@ -582,6 +582,8 @@ function displayGroundTruth(groundTruth, actionMatching = null) {
                 className += ' action-highlight-matched';
             } else if (matchInfo.type === 'partial' && matchInfo.matchType === 'name_only') {
                 className += ' action-highlight-partial';
+            } else if (matchInfo.type === 'missing') {
+                className += ' action-highlight-missing';
             } else if (matchInfo.type === 'unmatched') {
                 className += ' action-highlight-unmatched';
             }
