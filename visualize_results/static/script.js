@@ -254,6 +254,45 @@ function displayTask(data) {
     statusBadge.textContent = isSuccess ? 'SUCCESS' : 'FAILED';
     statusBadge.className = `badge ${isSuccess ? 'status-success' : 'status-failed'}`;
     
+    // Add output matching summary if outputs exist
+    let outputMatches = null;
+    
+    if (ground_truth.outputs && ground_truth.outputs.length > 0) {
+        // Check different possible paths for output matching data
+        if (result.info && result.info.reward_info && result.info.reward_info.info && result.info.reward_info.info.outputs) {
+            outputMatches = result.info.reward_info.info.outputs;
+        } else if (result.reward_info && result.reward_info.info && result.reward_info.info.outputs) {
+            outputMatches = result.reward_info.info.outputs;
+        }
+        
+        if (outputMatches) {
+            const totalOutputs = Object.keys(outputMatches).length;
+            const matchedOutputs = Object.values(outputMatches).filter(matched => matched).length;
+            const outputScore = totalOutputs > 0 ? (matchedOutputs / totalOutputs * 100).toFixed(0) : 0;
+            
+            // Add output matching info to reward display
+            const rewardDisplay = document.getElementById('reward-display');
+            const rewardContainer = rewardDisplay.parentElement;
+            
+            // Check if output info already exists, if not create it
+            let outputInfo = rewardContainer.querySelector('.output-info');
+            if (!outputInfo) {
+                outputInfo = document.createElement('div');
+                outputInfo.className = 'output-info';
+                rewardContainer.appendChild(outputInfo);
+            }
+            
+            outputInfo.innerHTML = `<strong>Outputs:</strong> ${matchedOutputs}/${totalOutputs} matched (${outputScore}%)`;
+        }
+    } else {
+        // Remove output info if it exists but no outputs
+        const rewardContainer = document.getElementById('reward-display').parentElement;
+        const outputInfo = rewardContainer.querySelector('.output-info');
+        if (outputInfo) {
+            outputInfo.remove();
+        }
+    }
+    
     // Calculate action matching for highlighting
     const actionMatching = calculateActionMatching(ground_truth.actions, result);
     
@@ -521,74 +560,136 @@ function toggleGroundTruth() {
     }
 }
 
-// Display ground truth information
+// Display ground truth with action matching
 function displayGroundTruth(groundTruth, actionMatching = null) {
     const container = document.getElementById('ground-truth-display');
+    container.innerHTML = '';
     
-    // Generate action comparison if we have current task data
-    let comparisonHtml = '';
-    if (currentTaskData && currentTaskData.result) {
-        comparisonHtml = generateActionComparison(groundTruth.actions, currentTaskData.result);
+    // Display expected actions
+    const actionsSection = document.createElement('div');
+    actionsSection.className = 'ground-truth-section';
+    actionsSection.innerHTML = '<h6>Expected Actions:</h6>';
+    
+    const actionsList = document.createElement('ol');
+    groundTruth.actions.forEach((action, index) => {
+        const actionItem = document.createElement('li');
+        let className = 'expected-action';
+        
+        // Add highlighting based on matching
+        if (actionMatching && actionMatching.expected[index]) {
+            const matchInfo = actionMatching.expected[index];
+            if (matchInfo.type === 'matched' && matchInfo.matchType === 'perfect') {
+                className += ' action-highlight-matched';
+            } else if (matchInfo.type === 'partial' && matchInfo.matchType === 'name_only') {
+                className += ' action-highlight-partial';
+            } else if (matchInfo.type === 'missing') {
+                className += ' action-highlight-missing';
+            } else if (matchInfo.type === 'unmatched') {
+                className += ' action-highlight-unmatched';
+            }
+        }
+        
+        actionItem.className = className;
+        actionItem.innerHTML = `<strong>${action.name}</strong>`;
+        
+        // Add arguments
+        if (action.kwargs && Object.keys(action.kwargs).length > 0) {
+            const args = document.createElement('div');
+            args.className = 'action-args';
+            args.innerHTML = `<pre>${JSON.stringify(action.kwargs, null, 2)}</pre>`;
+            actionItem.appendChild(args);
+        }
+        
+        actionsList.appendChild(actionItem);
+    });
+    
+    actionsSection.appendChild(actionsList);
+    container.appendChild(actionsSection);
+    
+    // Add output matching results if available
+    displayOutputMatching(currentTaskData);
+}
+
+// Add new function to display output matching results
+function displayOutputMatching(taskData) {
+    console.log('displayOutputMatching called with:', taskData); // Debug log
+    
+    if (!taskData || !taskData.result) {
+        console.log('No taskData or result found');
+        return;
     }
     
-    let actionsHtml = '';
-    if (groundTruth.actions && groundTruth.actions.length > 0) {
-        actionsHtml = groundTruth.actions.map((action, index) => {
-            const actionInfo = actionMatching && actionMatching.expected[index];
-            let highlightClass = '';
-            
-            if (actionInfo) {
-                if (actionInfo.type === 'matched' && actionInfo.matchType === 'perfect') {
-                    highlightClass = 'action-highlight-matched';
-                } else if (actionInfo.type === 'partial' && actionInfo.matchType === 'name_only') {
-                    highlightClass = 'action-highlight-partial';
-                } else if (actionInfo.type === 'missing') {
-                    highlightClass = 'action-highlight-missing';
-                } else {
-                    highlightClass = 'action-highlight-unmatched';
+    // Check different possible paths for output matching data
+    let outputMatches = null;
+    
+    if (taskData.result.info && taskData.result.info.reward_info && taskData.result.info.reward_info.info && taskData.result.info.reward_info.info.outputs) {
+        outputMatches = taskData.result.info.reward_info.info.outputs;
+        console.log('Found outputs in info.reward_info.info.outputs:', outputMatches);
+    } else if (taskData.result.reward_info && taskData.result.reward_info.info && taskData.result.reward_info.info.outputs) {
+        outputMatches = taskData.result.reward_info.info.outputs;
+        console.log('Found outputs in reward_info.info.outputs:', outputMatches);
+    } else if (taskData.result.info && taskData.result.info.outputs) {
+        outputMatches = taskData.result.info.outputs;
+        console.log('Found outputs in info.outputs:', outputMatches);
+    } else if (taskData.result.outputs) {
+        outputMatches = taskData.result.outputs;
+        console.log('Found outputs in outputs:', outputMatches);
+    }
+    
+    if (!outputMatches) {
+        console.log('No output matching data found. Available paths:', Object.keys(taskData.result));
+        if (taskData.result.info) {
+            console.log('Available paths in result.info:', Object.keys(taskData.result.info));
+            if (taskData.result.info.reward_info) {
+                console.log('Available paths in result.info.reward_info:', Object.keys(taskData.result.info.reward_info));
+                if (taskData.result.info.reward_info.info) {
+                    console.log('Available paths in result.info.reward_info.info:', Object.keys(taskData.result.info.reward_info.info));
                 }
             }
-            
-            // Add match status label for ground truth actions
-            let matchStatusLabel = '';
-            if (actionInfo && actionInfo.type === 'partial' && actionInfo.matchType === 'name_only') {
-                matchStatusLabel = '<div class="match-status-label">⚠️ Arguments Not Matched</div>';
-            }
-            
-            return `
-                <div class="ground-truth-action ${highlightClass}">
-                    <div class="ground-truth-action-name">🔧 ${index + 1}. ${action.name}</div>
-                    ${matchStatusLabel}
-                    <div class="ground-truth-args">${JSON.stringify(action.kwargs, null, 2)}</div>
-                </div>
-            `;
-        }).join('');
-    } else {
-        actionsHtml = '<div class="text-muted">No actions expected</div>';
+        }
+        return;
     }
     
-    let outputsHtml = '';
-    if (groundTruth.outputs && groundTruth.outputs.length > 0) {
-        outputsHtml = `
-            <div class="expected-outputs">
-                <div class="expected-outputs-title">📤 Expected Outputs:</div>
-                ${groundTruth.outputs.map(output => `
-                    <div class="expected-output">${escapeHtml(output)}</div>
-                `).join('')}
-            </div>
+    const container = document.getElementById('ground-truth-display');
+    
+    // Add output matching section
+    const matchingSection = document.createElement('div');
+    matchingSection.className = 'ground-truth-section mt-3';
+    matchingSection.innerHTML = '<h6>Output Matching Results:</h6>';
+    
+    const matchingList = document.createElement('ul');
+    matchingList.className = 'output-matching-list';
+    
+    Object.entries(outputMatches).forEach(([output, matched]) => {
+        const matchItem = document.createElement('li');
+        matchItem.className = `output-match-item ${matched ? 'output-matched' : 'output-unmatched'}`;
+        
+        const icon = matched ? '✅' : '❌';
+        const status = matched ? 'Matched' : 'Not Matched';
+        
+        matchItem.innerHTML = `
+            <span class="output-match-icon">${icon}</span>
+            <code class="output-value">${escapeHtml(output)}</code>
+            <span class="output-match-status">${status}</span>
         `;
-    }
+        
+        matchingList.appendChild(matchItem);
+    });
     
-    container.innerHTML = `
-        <div>
-            ${comparisonHtml}
-            
-            <h6>⚙️ Expected Actions:</h6>
-            ${actionsHtml}
-            
-            ${outputsHtml}
-        </div>
-    `;
+    matchingSection.appendChild(matchingList);
+    container.appendChild(matchingSection);
+    
+    // Calculate and display output score
+    const totalOutputs = Object.keys(outputMatches).length;
+    const matchedOutputs = Object.values(outputMatches).filter(matched => matched).length;
+    const outputScore = totalOutputs > 0 ? (matchedOutputs / totalOutputs * 100).toFixed(1) : 0;
+    
+    const scoreDiv = document.createElement('div');
+    scoreDiv.className = 'output-score mt-2';
+    scoreDiv.innerHTML = `<strong>Output Score:</strong> ${matchedOutputs}/${totalOutputs} (${outputScore}%)`;
+    matchingSection.appendChild(scoreDiv);
+    
+    console.log('Output matching section added successfully');
 }
 
 // Navigation functions

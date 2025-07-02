@@ -30,9 +30,6 @@ class ToolCallingAgent(Agent):
         self.temperature = temperature
         self.disable_thinking = True if os.getenv("DISABLE_AGENT_MODEL_THINK") == "true" else False
         self.reasoning_effort = os.getenv("AGENT_MODEL_REASONING_EFFORT", None)
-        if self.provider == "vertex_ai":
-            self.vai_project = os.getenv("VAI_PROJECT_ID")
-            assert self.vai_project is not None, "VAI_PROJECT_ID environment variable must be set"
 
     def solve(
         self, env: Env, task_index: Optional[int] = None, max_num_steps: int = 30
@@ -98,6 +95,12 @@ class ToolCallingAgent(Agent):
                 )
 
             next_message = res.choices[0].message.model_dump()
+            # res_dict = res.model_dump()
+            # if next_message["content"] is None and "tool_calls" in next_message and next_message["tool_calls"] is None:
+                # print(f"BDEBUG: next_message['content'] is None")
+                # print(f"BDEBUG: res_dict {res_dict}")
+                # print(f"BDEBUG: agent received messages:\n=============\n{messages}\n=============\n")
+
             usage = res.usage
             if hasattr(usage, 'prompt_tokens') and usage.prompt_tokens is not None:
                 next_message['prompt_tokens'] = usage.prompt_tokens
