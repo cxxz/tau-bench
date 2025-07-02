@@ -14,6 +14,182 @@ from concurrent.futures import ThreadPoolExecutor
 from tau_bench.envs.retail.wiki import WIKI as RETAIL_WIKI
 from tau_bench.envs.airline.wiki import WIKI as AIRLINE_WIKI
 
+
+def extract_actual_actions(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Extract actual actions from result trajectory.
+    
+    Args:
+        result: Dictionary containing trajectory data with 'traj' or 'messages' key
+        
+    Returns:
+        List of dictionaries with 'name' and 'args' keys representing actions taken
+    """
+    actions = []
+    messages = result.get('traj', result.get('messages', []))
+    
+    for message in messages:
+        if message.get('tool_calls'):
+            for call in message['tool_calls']:
+                if call.get('function') and call['function'].get('name'):
+                    actions.append({
+                        'name': call['function']['name'],
+                        'args': call['function'].get('arguments', {})
+                    })
+    
+    return actions
+
+
+def normalize_args(args: Any) -> Dict[str, Any]:
+    """
+    Normalize arguments for comparison.
+    
+    Args:
+        args: Arguments that could be string, dict, or other type
+        
+    Returns:
+        Dictionary representation of arguments
+    """
+    if isinstance(args, str):
+        try:
+            return json.loads(args)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    elif isinstance(args, dict):
+        return args
+    else:
+        return {}
+
+
+def sort_object_keys(obj: Any) -> Any:
+    """
+    Recursively sort object keys for consistent comparison.
+    
+    Args:
+        obj: Object to sort keys for
+        
+    Returns:
+        Object with sorted keys
+    """
+    if obj is None or not isinstance(obj, dict):
+        return obj
+    
+    sorted_obj = {}
+    for key in sorted(obj.keys()):
+        sorted_obj[key] = sort_object_keys(obj[key])
+    return sorted_obj
+
+
+def deep_equal(obj1: Any, obj2: Any) -> bool:
+    """
+    Compare two objects for deep equality.
+    
+    Args:
+        obj1: First object
+        obj2: Second object
+        
+    Returns:
+        True if objects are deeply equal, False otherwise
+    """
+    return json.dumps(sort_object_keys(obj1), sort_keys=True) == json.dumps(sort_object_keys(obj2), sort_keys=True)
+
+
+def compare_action_sequences(expected_actions: List[Action], actual_actions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Compare expected and actual action sequences with detailed matching.
+    
+    Args:
+        expected_actions: List of Action objects representing expected actions
+        actual_actions: List of dictionaries representing actual actions taken
+        
+    Returns:
+        Dictionary with comparison results including match counts and types
+    """
+    # Create normalized versions for comparison
+    expected_normalized = [
+        {
+            'name': action.name,
+            'args': normalize_args(action.kwargs)
+        }
+        for action in expected_actions
+    ]
+    
+    actual_normalized = [
+        {
+            'name': action['name'],
+            'args': normalize_args(action['args'])
+        }
+        for action in actual_actions
+    ]
+    
+    # Check for exact match (both names and arguments)
+    expected_sorted = [
+        {'name': a['name'], 'args': sort_object_keys(a['args'])}
+        for a in expected_normalized
+    ]
+    actual_sorted = [
+        {'name': a['name'], 'args': sort_object_keys(a['args'])}
+        for a in actual_normalized
+    ]
+    
+    exact_match = json.dumps(expected_sorted, sort_keys=True) == json.dumps(actual_sorted, sort_keys=True)
+    
+    # Count different types of matches
+    perfect_matches = 0  # Both name and args match
+    name_only_matches = 0  # Name matches but args don't
+    total_matched = 0  # Any kind of match
+    
+    matched_indices = set()
+    
+    # First pass: find perfect matches (name + args)
+    for actual_action in actual_normalized:
+        for expected_index, expected_action in enumerate(expected_normalized):
+            if (expected_index not in matched_indices and
+                actual_action['name'] == expected_action['name'] and
+                deep_equal(actual_action['args'], expected_action['args'])):
+                perfect_matches += 1
+                total_matched += 1
+                matched_indices.add(expected_index)
+                break
+    
+    # Second pass: find name-only matches for remaining actions
+    for actual_action in actual_normalized:
+        # Skip if this actual action already had a perfect match
+        already_perfect_match = any(
+            expected_index in matched_indices and
+            actual_action['name'] == expected_normalized[expected_index]['name'] and
+            deep_equal(actual_action['args'], expected_normalized[expected_index]['args'])
+            for expected_index in range(len(expected_normalized))
+        )
+        
+        if not already_perfect_match:
+            for expected_index, expected_action in enumerate(expected_normalized):
+                if (expected_index not in matched_indices and
+                    actual_action['name'] == expected_action['name']):
+                    name_only_matches += 1
+                    total_matched += 1
+                    matched_indices.add(expected_index)
+                    break
+    
+    missing = len(expected_normalized) - total_matched
+    extra = len(actual_normalized) - total_matched
+    
+    # Check if order is wrong (if we have matches but not exact sequence)
+    wrong_order = total_matched > 0 and not exact_match and missing == 0 and extra == 0
+    
+    return {
+        'exact_match': exact_match,
+        'matched': total_matched,
+        'perfect_matches': perfect_matches,
+        'name_only_matches': name_only_matches,
+        'missing': missing,
+        'extra': extra,
+        'wrong_order': wrong_order,
+        'matched_indices': matched_indices
+    }
+
+
+
 def get_args() -> argparse.Namespace:
     parser = api_parser()
     parser.add_argument("--env", type=str, default="retail", choices=["airline", "retail"], help="The environment that the original trajectories are from (used to fetch the user instructions)")
@@ -82,6 +258,81 @@ class FaultTypeResult(BaseModel):
 class GradingStrategy(Enum):
     ACTIONS = "actions"
     OUTPUTS = "outputs"
+
+
+def generate_action_comparison_and_get_unmatched(original_results: List[OriginalResult]) -> List[Dict[str, Any]]:
+    """
+    Generate action comparison between expected and actual actions, and return unmatched ground truth actions for each result.
+    
+    Args:
+        original_results: List of OriginalResult objects containing task data
+        
+    Returns:
+        List of dictionaries, each containing:
+        - task_id: The task identifier
+        - unmatched_actions: List of Action objects that were not matched in the actual trajectory
+        - comparison_summary: Dictionary with comparison statistics
+    """
+    results_with_unmatched = []
+    
+    for original_result in original_results:
+        expected_actions = original_result.ground_truth_actions
+        result_dict = {"traj": original_result.traj}
+        
+        actual_actions = extract_actual_actions(result_dict)
+        
+        if not expected_actions:
+            unmatched_actions = []
+            comparison_summary = {
+                'exact_match': True,
+                'matched': 0,
+                'perfect_matches': 0,
+                'name_only_matches': 0,
+                'missing': 0,
+                'extra': len(actual_actions),
+                'wrong_order': False
+            }
+        elif not actual_actions:
+            # All expected actions are unmatched
+            unmatched_actions = expected_actions
+            comparison_summary = {
+                'exact_match': False,
+                'matched': 0,
+                'perfect_matches': 0,
+                'name_only_matches': 0,
+                'missing': len(expected_actions),
+                'extra': 0,
+                'wrong_order': False
+            }
+        else:
+            # Get detailed comparison
+            comparison = compare_action_sequences(expected_actions, actual_actions)
+            
+            # Find unmatched actions by checking which indices were not matched
+            matched_indices = comparison['matched_indices']
+            unmatched_actions = [
+                action for index, action in enumerate(expected_actions)
+                if index not in matched_indices
+            ]
+            
+            # Create summary without internal matched_indices
+            comparison_summary = {
+                'exact_match': comparison['exact_match'],
+                'matched': comparison['matched'],
+                'perfect_matches': comparison['perfect_matches'],
+                'name_only_matches': comparison['name_only_matches'],
+                'missing': comparison['missing'],
+                'extra': comparison['extra'],
+                'wrong_order': comparison['wrong_order']
+            }
+        
+        results_with_unmatched.append({
+            'task_id': original_result.task_id,
+            'unmatched_actions': unmatched_actions,
+            'comparison_summary': comparison_summary
+        })
+    
+    return results_with_unmatched
 
 
 def context_description(grading_strategy: GradingStrategy) -> str:
@@ -183,9 +434,15 @@ def goal_completion_analysis(api: API, results: List[OriginalResult], max_concur
                                   author=FaultAuthor.USER)
         
         instruction = f"""{ctx_desc}
-PLEASE NOTE that the ground truth action sequence is one example of a valid sequence that leads to the goal state. However, it MIGHT NOT be the only valid sequence.
+Your task is to determine whether the simulated assistant has completed the goal state in the simulated interactive environment with the simulated user. If the Assistant completed the goal state, return "yes". If the assistant did not complete the goal state, return "no".
 
-Your task is to determine whether the Assistant completed the goal state. If the Assistant completed the goal state, return "yes". If the assistant did not complete the goal state, return "no".
+The user instruction describes the tasks and goals that the assistant and the simulated user should achieve.
+
+The success of the task is determined by whether the assistant has completed the goal state, which is defined as the state where ALL the required tasks have been completed and all the required outputs have been communicated to the user. This is typically achieved when ALL the actions have been executed in the correct order and with the correct arguments.
+
+However, PLEASE NOTE that the ground truth action sequence is one example of a valid sequence that leads to the goal state. It MIGHT NOT be the only valid sequence. For example, the assistant might combine different actions using different arguments or divide one action into multiple sub-actions. As long as the goal state is achieved, the assistant can be considered to have completed the goal state.
+
+Before you answer, list out all the required tasks and sub-tasks in the user instruction. Go through the trajectory step by step and check if the assistant has completed all the required tasks and sub-tasks.
 
 Return your response as a JSON object with the following format:
 {{
@@ -200,7 +457,7 @@ Return your response as a JSON object with the following format:
         
         try:
             # Parse the JSON response
-            result_json = json.loads(response)
+            result_json = json.loads(response.strip('```json'))
             rationale = result_json.get("rationale", "No rationale provided")
             goal_completed = result_json.get("goal_completed", "no").lower()
             
@@ -222,8 +479,8 @@ Return your response as a JSON object with the following format:
         results = list(executor.map(assign_fault, task_ids, user_instructions, trajs, ground_truth_actions, ground_truth_outputs))
     return results
 
-def fault_assignment_analysis_by_author(api: API, results: List[OriginalResult], max_concurrency: int, agent_policy: str, goal_completion_results: List[GoalCompletionResult]) -> List[FaultAssignmentResult]:
-    def assign_fault_by_author(task_id: int, user_instruction: str, agent_policy: str, traj: List[Dict[str, Any]], ground_truth_actions: List[Action], ground_truth_outputs: List[str], extra_context: str) -> FaultAssignmentResult:
+def fault_assignment_analysis_by_author(api: API, results: List[OriginalResult], max_concurrency: int, agent_policy: str, goal_completion_results: List[GoalCompletionResult], unmatched_actions: List[Dict[str, Any]]) -> List[FaultAssignmentResult]:
+    def assign_fault_by_author(task_id: int, user_instruction: str, agent_policy: str, traj: List[Dict[str, Any]], ground_truth_actions: List[Action], ground_truth_outputs: List[str], goal_completion_context: str, unmatched_actions: List[Dict[str, Any]]) -> FaultAssignmentResult:
         str_to_author = {
             "user": FaultAuthor.USER,
             "agent": FaultAuthor.AGENT,
@@ -231,14 +488,28 @@ def fault_assignment_analysis_by_author(api: API, results: List[OriginalResult],
         }
         grading_strategy = GradingStrategy.OUTPUTS if len(ground_truth_outputs) > 0 else GradingStrategy.ACTIONS
         ctx_desc = context_description(grading_strategy)
-        if extra_context:
-            ctx_desc += f"\n\nYou are also given an additional analysis on whether the agent has completed the goal state. \
-                Note that although the trajectory is determined to have a fault, the ground truth sequence may not be the only valid sequence to the goal state.\n{extra_context}\n"
+        if goal_completion_context:
+            ctx_desc += f'''\nYou are also given an additional analysis on whether the agent has completed the goal state. 
+            Note that although the trajectory is determined to have a fault, the ground truth sequence may not be the only valid sequence to the goal state.
+            {goal_completion_context}
+            '''
         
         # Assign fault by author
         author_list = []
         rationale_list = []
         for author in FaultAuthor:
+            # Add unmatched actions context specifically for agent fault analysis
+            current_ctx_desc = ctx_desc
+            if author == FaultAuthor.AGENT:
+                # Find unmatched actions for this specific task
+                task_unmatched = next((ua for ua in unmatched_actions if ua['task_id'] == task_id), None)
+                if task_unmatched and task_unmatched['unmatched_actions']:
+                    unmatched_actions_info = [
+                        f"Action: {action.name}, Arguments: {json.dumps(action.kwargs)}" 
+                        for action in task_unmatched['unmatched_actions']
+                    ]
+                    current_ctx_desc += f"\n\nAdditional context for agent analysis - The following expected actions were not executed:\n" + "\n".join(unmatched_actions_info) + "\n"
+            
             context = display_context(user_instruction = user_instruction, 
                                       agent_policy=agent_policy, 
                                       ground_truth_actions = ground_truth_actions, 
@@ -246,7 +517,11 @@ def fault_assignment_analysis_by_author(api: API, results: List[OriginalResult],
                                       trajectory= traj, 
                                       author = author)
 
-            assignment_prompt = ctx_desc + get_fault_assignment_prompt(author)
+            assignment_prompt = current_ctx_desc + get_fault_assignment_prompt(author)
+            print(f"DEBUG {author.value}_PROMPT:\n", assignment_prompt)
+            if author == FaultAuthor.AGENT: 
+                print(f"DEBUG agent context: \n============\n{context}\n============\n")
+
             response = api.generate(
                 instruction = assignment_prompt,
                 text=context,
@@ -254,7 +529,7 @@ def fault_assignment_analysis_by_author(api: API, results: List[OriginalResult],
 
             try:
                 # Parse the JSON response
-                result_json = json.loads(response)
+                result_json = json.loads(response.strip('```json'))
                 rationale = result_json.get("rationale", "No rationale provided")
                 is_faulty = result_json.get("is_responsible", "no").lower() == "yes"
                 responsible_entity = result_json.get("responsible_entity", "environment").lower()
@@ -265,8 +540,9 @@ def fault_assignment_analysis_by_author(api: API, results: List[OriginalResult],
             except (json.JSONDecodeError, KeyError) as e:
                 # Fallback: if JSON parsing fails, default to environment with error message
                 author = FaultAuthor.ENVIRONMENT
-                rationale = f"Error parsing response: {str(e)}. Original response: {response}"           
-            
+                rationale = f"Error parsing response: {str(e)}. Original response: {response}"
+                is_faulty = False  # Default to not faulty if parsing fails
+                author = FaultAuthor.ENVIRONMENT  # Default to environment if parsing fails          
             # If the author is responsible for the fault, append to the lists
             if is_faulty:
                 author_list.append(author)
@@ -282,10 +558,11 @@ def fault_assignment_analysis_by_author(api: API, results: List[OriginalResult],
         ground_truth_actions = [r.ground_truth_actions for r in results]
         ground_truth_outputs = [r.ground_truth_outputs for r in results]
         if len(goal_completion_results)>0:
-            extra_context = [f"{'Task goal completed:' if r.goal_completed else 'Task goal not completed'}\n Rationale: {r.rationale}" for r in goal_completion_results]
+            goal_completion_context = [f"Completion Status: {'Task goal completed.' if r.goal_completed else 'Task goal not completed.'}\nRationale: {r.rationale}" for r in goal_completion_results]
         else:
-            extra_context = ["" for _ in results]  # Empty context if no goal completion results
-        results = list(executor.map(assign_fault_by_author, task_ids, user_instructions,agent_policies, trajs, ground_truth_actions, ground_truth_outputs, extra_context))
+            goal_completion_context = ["" for _ in results]  # Empty context if no goal completion results
+        unmatched_actions_list = [unmatched_actions for _ in results]  # Pass the same unmatched_actions list to all tasks
+        results = list(executor.map(assign_fault_by_author, task_ids, user_instructions, agent_policies, trajs, ground_truth_actions, ground_truth_outputs, goal_completion_context, unmatched_actions_list))
     return results
 
 
@@ -388,6 +665,11 @@ def main() -> None:
                 "task_id": missing_id,
                 "status": "no task found"
             })
+    
+    # Generate action comparison and get unmatched actions
+    #TODO: Debug this function to ensure it works correctly
+    # unmatched_actions = generate_action_comparison_and_get_unmatched(original_results)
+    
     print("Performing goal completion analysis on the original results...")
     goal_completion_results = goal_completion_analysis(api=api, results=original_results, max_concurrency=args.max_concurrency)
     print(f"Performing fault assignment analysis on {len(original_results)} failed trajectories with a max concurrency of {args.max_concurrency}...")
@@ -395,7 +677,8 @@ def main() -> None:
                                                                    results=original_results, 
                                                                    max_concurrency=args.max_concurrency, 
                                                                    agent_policy=wiki, 
-                                                                   goal_completion_results=goal_completion_results)
+                                                                   goal_completion_results=goal_completion_results,
+                                                                   unmatched_actions=[]) # Pass empty unmatched_actions for now
     failures_due_to_agent = [original_results[i] for i, r in enumerate(fault_assignment_results) if FaultAuthor.AGENT in r.authors]
     print(f"Performing fault type analysis on {len(failures_due_to_agent)} failures that have been marked as being caused by the agent with a max concurrency of {args.max_concurrency}...")
     fault_type_results = fault_type_analysis(api=api, results=failures_due_to_agent, max_concurrency=args.max_concurrency, agent_policy=wiki)
